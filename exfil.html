@@ -1,0 +1,3359 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>EXFIL — Tactical Extraction</title>
+<style>
+:root{
+  --bg:#0d0f0e; --bg2:#141817; --panel:#191e1c; --panel2:#202623;
+  --line:#2c3531; --line2:#3a453f;
+  --txt:#c9d1cb; --dim:#7d8a82; --dim2:#5b665f;
+  --acc:#9db668; --acc2:#c2d98a; --warn:#d99a4e; --bad:#c1533f; --good:#6fa87c;
+  --gold:#c9a961;
+  --mono:ui-monospace,'SF Mono',Menlo,Consolas,'DejaVu Sans Mono',monospace;
+}
+*{box-sizing:border-box}
+html,body{margin:0;padding:0;height:100%}
+body{
+  background:var(--bg); color:var(--txt);
+  font-family:var(--mono); font-size:13px; line-height:1.45;
+  -webkit-font-smoothing:antialiased;
+  overflow:hidden;
+}
+button{font-family:inherit;font-size:inherit;color:inherit;background:none;border:none;cursor:pointer}
+::-webkit-scrollbar{width:9px;height:9px}
+::-webkit-scrollbar-track{background:var(--bg2)}
+::-webkit-scrollbar-thumb{background:var(--line2);border-radius:0}
+::-webkit-scrollbar-thumb:hover{background:var(--dim2)}
+
+#app{display:flex;flex-direction:column;height:100vh;height:100dvh}
+
+/* ---------- top bar ---------- */
+#topbar{
+  display:flex;align-items:center;gap:14px;
+  padding:0 14px;height:44px;flex:0 0 44px;
+  background:var(--bg2);border-bottom:1px solid var(--line);
+}
+#brand{font-weight:700;letter-spacing:3px;color:var(--acc);font-size:15px}
+#brand small{color:var(--dim2);letter-spacing:1px;font-size:9px;display:block;line-height:1;margin-top:-2px}
+.nav{display:flex;gap:2px;margin-left:8px}
+.nav button{
+  padding:6px 13px;color:var(--dim);border:1px solid transparent;
+  letter-spacing:1px;font-size:11px;text-transform:uppercase;
+}
+.nav button:hover{color:var(--txt);background:var(--panel)}
+.nav button.on{color:var(--acc2);background:var(--panel);border-color:var(--line2)}
+.nav button:disabled{opacity:.3;cursor:not-allowed}
+#stats{margin-left:auto;display:flex;gap:16px;align-items:center;font-size:11px}
+#stats b{color:var(--gold);font-weight:600}
+#stats .lv{color:var(--acc2)}
+
+/* ---------- screens ---------- */
+#screens{flex:1;overflow:hidden;position:relative}
+.screen{position:absolute;inset:0;overflow:auto;padding:16px;display:none}
+.screen.on{display:block}
+.screen.flexcol{display:none;flex-direction:column}
+.screen.flexcol.on{display:flex}
+
+h2{margin:0 0 3px;font-size:14px;letter-spacing:2px;text-transform:uppercase;color:var(--acc2);font-weight:600}
+h3{margin:0 0 8px;font-size:11px;letter-spacing:1.5px;text-transform:uppercase;color:var(--dim);font-weight:600}
+.sub{color:var(--dim2);font-size:11px;margin-bottom:14px}
+
+.cols{display:grid;gap:12px}
+.panel{background:var(--panel);border:1px solid var(--line);padding:12px}
+.panel.tight{padding:8px}
+
+/* ---------- generic item rows ---------- */
+.row{
+  display:flex;align-items:center;gap:9px;padding:5px 8px;
+  border:1px solid transparent;cursor:pointer;
+}
+.row:hover{background:var(--panel2);border-color:var(--line2)}
+.row.sel{background:var(--panel2);border-color:var(--acc);}
+.row .nm{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.row .meta{color:var(--dim2);font-size:10px;flex:0 0 auto}
+.row .price{color:var(--gold);font-size:11px;flex:0 0 auto}
+.tag{
+  display:inline-block;padding:0 5px;font-size:9px;letter-spacing:.5px;
+  border:1px solid var(--line2);color:var(--dim);text-transform:uppercase;
+}
+.tag.w{border-color:#4a5a3a;color:var(--acc)}
+.tag.a{border-color:#5a4a3a;color:var(--warn)}
+.tag.m{border-color:#3a4a5a;color:#7d9ab5}
+.tag.med{border-color:#5a3a3a;color:#c98080}
+.tag.l{border-color:#4a4a3a;color:var(--gold)}
+.tag.k{border-color:#5a3a5a;color:#b580b5}
+
+.empty{color:var(--dim2);padding:16px 8px;text-align:center;font-size:11px}
+
+/* ---------- buttons ---------- */
+.btn{
+  padding:7px 14px;border:1px solid var(--line2);background:var(--panel2);
+  color:var(--txt);letter-spacing:1px;font-size:11px;text-transform:uppercase;
+}
+.btn:hover{border-color:var(--acc);color:var(--acc2)}
+.btn:disabled{opacity:.32;cursor:not-allowed;border-color:var(--line)!important;color:var(--dim2)!important}
+.btn.pri{background:#2b3a22;border-color:#4d6b39;color:var(--acc2)}
+.btn.pri:hover{background:#35492a;border-color:var(--acc)}
+.btn.danger{border-color:#5a3230;color:#c98070}
+.btn.danger:hover{border-color:var(--bad);color:var(--bad)}
+.btn.sm{padding:3px 9px;font-size:10px}
+
+/* ---------- stat bars ---------- */
+.statline{display:flex;align-items:center;gap:8px;margin:3px 0;font-size:11px}
+.statline .k{flex:0 0 118px;color:var(--dim)}
+.statline .bar{flex:1;height:7px;background:var(--bg);border:1px solid var(--line);position:relative;overflow:hidden}
+.statline .bar i{position:absolute;left:0;top:0;bottom:0;background:var(--acc);display:block}
+.statline .bar i.neg{background:var(--bad)}
+.statline .v{flex:0 0 62px;text-align:right;color:var(--txt);font-variant-numeric:tabular-nums}
+.delta{font-size:10px;margin-left:4px}
+.delta.up{color:var(--good)} .delta.down{color:var(--bad)}
+
+/* ---------- workbench ---------- */
+#wbWrap{display:grid;grid-template-columns:210px 1fr 290px;gap:12px;height:100%;min-height:0}
+#wbWrap>div{overflow:auto;min-height:0}
+.slot{
+  border:1px solid var(--line);margin-bottom:4px;padding:6px 9px;cursor:pointer;
+  display:flex;align-items:center;gap:8px;background:var(--panel);
+}
+.slot:hover{border-color:var(--line2);background:var(--panel2)}
+.slot.sel{border-color:var(--acc);background:var(--panel2)}
+.slot .sn{flex:0 0 74px;color:var(--dim2);font-size:9px;letter-spacing:1px;text-transform:uppercase}
+.slot .sv{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:11px}
+.slot .sv.none{color:var(--dim2);font-style:italic}
+.slot.locked{opacity:.5}
+.slot.locked:hover{opacity:.8}
+.reqnote{color:var(--warn);font-size:10px;padding:4px 9px;background:#241d12;border:1px solid #443320;margin-bottom:6px}
+.gunhdr{display:flex;align-items:baseline;gap:10px;margin-bottom:8px;flex-wrap:wrap}
+.gunhdr .gn{font-size:15px;color:var(--acc2);letter-spacing:1px}
+.gunhdr .gc{color:var(--dim);font-size:11px}
+
+/* ---------- raid ---------- */
+#raidWrap{display:flex;height:100%;min-height:0}
+#canvasBox{flex:1;position:relative;background:#070908;min-width:0}
+#grid{display:block;width:100%;height:100%;image-rendering:pixelated;cursor:crosshair}
+#raidSide{
+  flex:0 0 268px;background:var(--panel);border-left:1px solid var(--line);
+  display:flex;flex-direction:column;overflow:hidden;
+}
+#raidSide>div{padding:9px 11px;border-bottom:1px solid var(--line)}
+#log{flex:1;overflow-y:auto;font-size:11px;line-height:1.5;border-bottom:none}
+#log div{margin-bottom:2px;color:var(--dim)}
+#log .hit{color:var(--acc2)} #log .dmg{color:var(--bad)} #log .warn{color:var(--warn)}
+#log .good{color:var(--good)} #log .big{color:var(--gold)} #log .sys{color:var(--dim2);font-style:italic}
+#actions{display:flex;flex-wrap:wrap;gap:4px}
+#actions .btn{flex:1 1 auto;min-width:64px;text-align:center;padding:6px 8px}
+#apBar{display:flex;gap:3px;margin-top:6px}
+#apBar i{flex:1;height:9px;background:var(--bg);border:1px solid var(--line2)}
+#apBar i.f{background:var(--acc);border-color:var(--acc)}
+#apBar i.p{background:var(--warn);border-color:var(--warn)}
+
+.body{display:grid;grid-template-columns:repeat(3,1fr);gap:3px;font-size:9px;text-align:center}
+.body .lm{padding:3px 1px;border:1px solid var(--line);background:var(--bg);position:relative;overflow:hidden}
+.body .lm b{position:relative;z-index:1;display:block;color:var(--dim);font-weight:400;letter-spacing:.3px}
+.body .lm u{position:relative;z-index:1;text-decoration:none;color:var(--txt);font-variant-numeric:tabular-nums}
+.body .lm em{position:absolute;left:0;bottom:0;right:0;background:#2f4433;z-index:0;font-style:normal}
+.body .lm.hurt em{background:#4a3a22} .body .lm.crit em{background:#4a2622}
+.body .lm.black{opacity:.55} .body .lm.black u{color:var(--bad)}
+.body .sp{grid-column:span 1}
+
+#hover{
+  position:absolute;pointer-events:none;background:#0b0e0dee;border:1px solid var(--line2);
+  padding:6px 9px;font-size:11px;max-width:250px;z-index:20;display:none;line-height:1.4;
+}
+#hover .hn{color:var(--acc2);margin-bottom:2px}
+
+/* ---------- modal ---------- */
+#modal{position:absolute;inset:0;background:#05070699;display:none;align-items:center;justify-content:center;z-index:50;padding:20px}
+#modal.on{display:flex}
+#modalBox{background:var(--panel);border:1px solid var(--line2);padding:20px;max-width:620px;width:100%;max-height:88%;overflow:auto}
+#modalBox h2{margin-bottom:10px}
+.mrow{display:flex;justify-content:space-between;padding:3px 0;border-bottom:1px solid var(--line);font-size:12px}
+.mrow:last-child{border:none}
+.mrow span:last-child{color:var(--txt)}
+.mactions{display:flex;gap:8px;margin-top:16px;justify-content:flex-end}
+
+/* ---------- tables / lists ---------- */
+.scroll{max-height:100%;overflow-y:auto}
+.kv{display:flex;justify-content:space-between;font-size:11px;padding:2px 0;color:var(--dim)}
+.kv b{color:var(--txt);font-weight:400}
+.hr{height:1px;background:var(--line);margin:9px 0}
+.pill{display:inline-block;padding:1px 6px;border:1px solid var(--line2);font-size:10px;color:var(--dim);margin:0 3px 3px 0}
+.pill.on{border-color:var(--acc);color:var(--acc2)}
+select,input[type=text]{
+  background:var(--bg);color:var(--txt);border:1px solid var(--line2);
+  padding:4px 6px;font-family:inherit;font-size:11px;
+}
+.warnbox{border:1px solid #4a3320;background:#221a10;color:var(--warn);padding:7px 10px;font-size:11px;margin-bottom:10px}
+.okbox{border:1px solid #2c4432;background:#141d17;color:var(--good);padding:7px 10px;font-size:11px;margin-bottom:10px}
+
+@media (max-width:1100px){
+  #wbWrap{grid-template-columns:180px 1fr;grid-template-rows:1fr auto}
+  #wbStats{grid-column:1/-1;max-height:260px}
+}
+@media (max-width:820px){
+  /* screen bodies set their column templates inline, so override hard */
+  .cols{grid-template-columns:1fr!important}
+  .scroll{max-height:none!important}
+  #stashList{max-height:52vh!important}
+  #traderBuy,#traderSell{max-height:44vh!important}
+  #wbWrap{grid-template-columns:1fr!important;grid-auto-rows:min-content;overflow:auto}
+  #wbStats{max-height:none}
+  #raidWrap{flex-direction:column}
+  #raidSide{flex:0 0 auto;max-height:46%;border-left:none;border-top:1px solid var(--line)}
+  #canvasBox{min-height:220px}
+  #topbar{height:auto;flex:0 0 auto;padding:5px 8px;flex-wrap:wrap;gap:6px}
+  #brand{font-size:13px;letter-spacing:2px}
+  #brand small{display:none}
+  #stats{gap:9px;font-size:10px;width:100%;margin-left:0}
+  #stRaids{display:none}
+  .nav{margin-left:0;flex-wrap:wrap}
+  .nav button{padding:5px 8px;font-size:10px}
+  .screen{padding:10px}
+  .statline .k{flex:0 0 92px}
+  .statline .v{flex:0 0 54px}
+}
+</style>
+</head>
+<body>
+<div id="app">
+
+  <div id="topbar">
+    <div id="brand">EXFIL<small>TACTICAL EXTRACTION</small></div>
+    <div class="nav" id="nav">
+      <button data-scr="stash">Stash</button>
+      <button data-scr="bench">Workbench</button>
+      <button data-scr="trader">Traders</button>
+      <button data-scr="quests">Tasks</button>
+      <button data-scr="deploy">Deploy</button>
+    </div>
+    <div id="stats">
+      <span class="lv">LV <b id="stLv">1</b> <span id="stXp" style="color:var(--dim2)"></span></span>
+      <span>₽ <b id="stRub">0</b></span>
+      <span id="stRaids" style="color:var(--dim2)"></span>
+      <button class="btn sm danger" id="wipeBtn" title="Delete save and start over">Wipe</button>
+    </div>
+  </div>
+
+  <div id="screens">
+
+    <!-- ============ STASH ============ -->
+    <div class="screen" id="scr-stash">
+      <h2>Stash</h2>
+      <div class="sub" id="stashSub"></div>
+      <div class="cols" style="grid-template-columns:1fr 320px">
+        <div class="panel tight">
+          <div style="display:flex;gap:4px;margin-bottom:8px;flex-wrap:wrap" id="stashFilters"></div>
+          <div id="stashList" class="scroll" style="max-height:calc(100vh - 210px)"></div>
+        </div>
+        <div>
+          <div class="panel" id="stashDetail"><div class="empty">Select an item</div></div>
+          <div class="panel" style="margin-top:12px">
+            <h3>Character</h3>
+            <div id="charPanel"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ============ WORKBENCH ============ -->
+    <div class="screen flexcol" id="scr-bench">
+      <h2>Weapon Workbench</h2>
+      <div class="sub">Every part changes how the weapon behaves in a raid. Ergonomics buys action points, recoil governs bursts, MOA and muzzle velocity set your effective range.</div>
+      <div id="wbWrap">
+        <div class="panel tight" id="wbGuns"></div>
+        <div class="panel" id="wbSlots"></div>
+        <div class="panel" id="wbStats"></div>
+      </div>
+    </div>
+
+    <!-- ============ TRADER ============ -->
+    <div class="screen" id="scr-trader">
+      <h2>Traders</h2>
+      <div class="sub">Loyalty rises with your level and with everything you spend. Higher loyalty unlocks better ammunition and armour.</div>
+      <div style="display:flex;gap:4px;margin-bottom:10px;flex-wrap:wrap" id="traderTabs"></div>
+      <div class="cols" style="grid-template-columns:1fr 1fr">
+        <div class="panel tight">
+          <h3 style="padding:4px 8px 0">Buying <span style="color:var(--dim2);text-transform:none;letter-spacing:0"> — trader sells</span></h3>
+          <div id="traderBuy" class="scroll" style="max-height:calc(100vh - 250px)"></div>
+        </div>
+        <div class="panel tight">
+          <h3 style="padding:4px 8px 0">Selling <span style="color:var(--dim2);text-transform:none;letter-spacing:0"> — your stash</span></h3>
+          <div id="traderSell" class="scroll" style="max-height:calc(100vh - 250px)"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ============ QUESTS ============ -->
+    <div class="screen" id="scr-quests">
+      <h2>Tasks</h2>
+      <div class="sub">Traders pay for work. Completed tasks raise loyalty and unlock stock.</div>
+      <div id="questList" class="cols" style="grid-template-columns:repeat(auto-fill,minmax(310px,1fr))"></div>
+    </div>
+
+    <!-- ============ DEPLOY ============ -->
+    <div class="screen" id="scr-deploy">
+      <h2>Deploy</h2>
+      <div class="sub">Anything you carry in can be lost. Anything you leave in the stash is safe.</div>
+      <div class="cols" style="grid-template-columns:1fr 330px">
+        <div>
+          <div class="panel">
+            <h3>Loadout</h3>
+            <div id="loadoutPanel"></div>
+          </div>
+          <div class="panel" style="margin-top:12px">
+            <h3>Location</h3>
+            <div id="mapPanel"></div>
+          </div>
+        </div>
+        <div class="panel">
+          <h3>Readiness</h3>
+          <div id="readyPanel"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ============ RAID ============ -->
+    <div class="screen flexcol" id="scr-raid" style="padding:0">
+      <div id="raidWrap">
+        <div id="canvasBox">
+          <canvas id="grid"></canvas>
+          <div id="hover"></div>
+        </div>
+        <div id="raidSide">
+          <div id="raidHdr"></div>
+          <div><div class="body" id="bodyPanel"></div></div>
+          <div id="wpnPanel"></div>
+          <div><div id="actions"></div><div id="apBar"></div></div>
+          <div id="log"></div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+  <div id="modal"><div id="modalBox"></div></div>
+</div>
+
+<script>
+"use strict";
+/* ==========================================================================
+   EXFIL — a turn-based tactical extraction roguelike.
+   Single file, no dependencies. An original game, mechanically inspired by
+   the extraction-shooter genre.
+
+   SECTION 1 — DATA
+   Ballistics, platforms, attachments, armour and medical items. Every number
+   below is consumed by the combat resolver in SECTION 3; nothing here is
+   decorative.
+   ========================================================================== */
+
+const CALIBERS = {
+  '545x39' : { name: '5.45x39mm',  short: '5.45' },
+  '762x39' : { name: '7.62x39mm',  short: '7.62x39' },
+  '556x45' : { name: '5.56x45mm',  short: '5.56' },
+  '9x19'   : { name: '9x19mm',     short: '9x19' },
+  '762x54' : { name: '7.62x54mmR', short: '7.62x54R' },
+  '12g'    : { name: '12/70 gauge',short: '12ga' },
+};
+
+/* --- Ammunition ----------------------------------------------------------
+   dmg    flesh damage per projectile
+   pen    penetration power, compared against armour resistance
+   aDmg   fraction of armour durability destroyed on impact
+   frag   chance to fragment inside flesh (bonus damage, never vs. armour)
+   vel    muzzle velocity m/s — drives penetration falloff over distance
+   quiet  subsonic: much smaller noise radius
+   pel    projectiles per trigger pull (shotguns)                          */
+const AMMO = [
+  // 5.45x39
+  { id:'545_hp',  name:'5.45 HP',         cal:'545x39', dmg:60, pen:11, aDmg:0.20, frag:0.17, vel:884, price:45 },
+  { id:'545_ps',  name:'5.45 PS gzh',     cal:'545x39', dmg:40, pen:28, aDmg:0.38, frag:0.12, vel:890, price:78 },
+  { id:'545_t',   name:'5.45 T gzh',      cal:'545x39', dmg:42, pen:25, aDmg:0.35, frag:0.10, vel:880, price:62 },
+  { id:'545_bt',  name:'5.45 BT gzh',     cal:'545x39', dmg:42, pen:33, aDmg:0.45, frag:0.07, vel:880, price:130 },
+  { id:'545_bp',  name:'5.45 BP gzh',     cal:'545x39', dmg:43, pen:37, aDmg:0.48, frag:0.06, vel:890, price:215 },
+  { id:'545_bs',  name:'5.45 BS gs',      cal:'545x39', dmg:40, pen:51, aDmg:0.58, frag:0.05, vel:830, price:590 },
+  // 7.62x39
+  { id:'762_hp',  name:'7.62x39 HP',      cal:'762x39', dmg:80, pen:15, aDmg:0.22, frag:0.17, vel:730, price:55 },
+  { id:'762_ps',  name:'7.62x39 PS gzh',  cal:'762x39', dmg:57, pen:30, aDmg:0.40, frag:0.13, vel:730, price:95 },
+  { id:'762_us',  name:'7.62x39 US gzh',  cal:'762x39', dmg:50, pen:20, aDmg:0.30, frag:0.07, vel:300, price:160, quiet:true },
+  { id:'762_bp',  name:'7.62x39 BP gzh',  cal:'762x39', dmg:58, pen:47, aDmg:0.52, frag:0.06, vel:730, price:340 },
+  { id:'762_ap',  name:'7.62x39 MAI AP',  cal:'762x39', dmg:53, pen:58, aDmg:0.62, frag:0.04, vel:730, price:1100 },
+  // 5.56x45
+  { id:'556_hp',  name:'5.56 Warmageddon',cal:'556x45', dmg:66, pen:10, aDmg:0.18, frag:0.19, vel:890, price:75 },
+  { id:'556_m855',name:'5.56 M855',       cal:'556x45', dmg:40, pen:31, aDmg:0.40, frag:0.12, vel:922, price:130 },
+  { id:'556_tr',  name:'5.56 M856A1',     cal:'556x45', dmg:44, pen:24, aDmg:0.35, frag:0.10, vel:900, price:110 },
+  { id:'556_m855a1',name:'5.56 M855A1',   cal:'556x45', dmg:43, pen:37, aDmg:0.48, frag:0.07, vel:945, price:290 },
+  { id:'556_m995',name:'5.56 M995 AP',    cal:'556x45', dmg:42, pen:53, aDmg:0.60, frag:0.05, vel:1013,price:950 },
+  // 9x19
+  { id:'9_rip',   name:'9x19 RIP',        cal:'9x19',   dmg:102,pen:2,  aDmg:0.10, frag:0.35, vel:380, price:130 },
+  { id:'9_sub',   name:'9x19 Subsonic',   cal:'9x19',   dmg:70, pen:5,  aDmg:0.15, frag:0.20, vel:320, price:90, quiet:true },
+  { id:'9_pst',   name:'9x19 PST gzh',    cal:'9x19',   dmg:54, pen:20, aDmg:0.32, frag:0.10, vel:400, price:55 },
+  { id:'9_gt',    name:'9x19 Green Tr.',  cal:'9x19',   dmg:58, pen:8,  aDmg:0.20, frag:0.12, vel:390, price:45 },
+  { id:'9_ap',    name:'9x19 AP 6.3',     cal:'9x19',   dmg:52, pen:30, aDmg:0.42, frag:0.05, vel:392, price:180 },
+  // 7.62x54R
+  { id:'54_lps',  name:'7.62x54R LPS',    cal:'762x54', dmg:81, pen:41, aDmg:0.50, frag:0.07, vel:800, price:200 },
+  { id:'54_t46',  name:'7.62x54R T-46M',  cal:'762x54', dmg:82, pen:38, aDmg:0.48, frag:0.07, vel:790, price:180 },
+  { id:'54_7n1',  name:'7.62x54R 7N1',    cal:'762x54', dmg:82, pen:46, aDmg:0.54, frag:0.06, vel:800, price:420 },
+  { id:'54_snb',  name:'7.62x54R SNB',    cal:'762x54', dmg:80, pen:56, aDmg:0.62, frag:0.04, vel:820, price:780 },
+  { id:'54_bt',   name:'7.62x54R BT',     cal:'762x54', dmg:78, pen:62, aDmg:0.68, frag:0.03, vel:800, price:1400 },
+  // 12 gauge
+  { id:'12_buck', name:'12/70 Buckshot',  cal:'12g',    dmg:50, pen:3,  aDmg:0.12, frag:0.05, vel:385, price:110, pel:8 },
+  { id:'12_mag',  name:'12/70 Magnum',    cal:'12g',    dmg:39, pen:2,  aDmg:0.10, frag:0.05, vel:410, price:130, pel:10 },
+  { id:'12_flech',name:'12/70 Flechette', cal:'12g',    dmg:25, pen:31, aDmg:0.42, frag:0.02, vel:530, price:420, pel:8 },
+  { id:'12_slug', name:'12/70 Poleva-6u', cal:'12g',    dmg:150,pen:22, aDmg:0.35, frag:0.08, vel:415, price:290, pel:1 },
+  { id:'12_ap20', name:'12/70 AP-20 slug',cal:'12g',    dmg:164,pen:37, aDmg:0.55, frag:0.03, vel:510, price:980, pel:1 },
+];
+
+/* --- Weapon platforms ----------------------------------------------------
+   ergo    ergonomics: buys back action points on aimed shots
+   rv/rh   vertical / horizontal recoil, raw units
+   moa     mechanical dispersion — grows with distance
+   sight   iron-sight usable range in metres
+   noise   metres at which a shot alerts AI
+   slots   which attachment points exist on this platform
+   fixed   parts fitted from the factory (free with the gun)               */
+const PLATFORMS = [
+  { id:'akm',   name:'AKM',        cal:'762x39', family:'ak',   mag:30, modes:['single','auto'], boltAP:0, price:21000,
+    ergo:48, rv:145, rh:415, moa:3.2, w:3.30, sight:55, vel:715, noise:55,
+    slots:['muzzle','barrel','gasblock','handguard','dustcover','pistolgrip','stock','mount','optic','mag','foregrip','tactical'],
+    fixed:{ barrel:'ak_bbl_415', handguard:'ak_hg_wood', pistolgrip:'ak_pg_bake', stock:'ak_st_wood', dustcover:'ak_dc_std', gasblock:'ak_gb_std', mag:'ak_mag_30' } },
+
+  { id:'ak74n', name:'AK-74N',     cal:'545x39', family:'ak',   mag:30, modes:['single','auto'], boltAP:0, price:24000,
+    ergo:44, rv:141, rh:413, moa:2.9, w:3.30, sight:55, vel:880, noise:54,
+    slots:['muzzle','barrel','gasblock','handguard','dustcover','pistolgrip','stock','mount','optic','mag','foregrip','tactical'],
+    fixed:{ barrel:'ak_bbl_415', handguard:'ak_hg_poly', pistolgrip:'ak_pg_bake', stock:'ak_st_poly', dustcover:'ak_dc_std', gasblock:'ak_gb_std', mag:'ak74_mag_30' } },
+
+  { id:'m4a1',  name:'M4A1',       cal:'556x45', family:'ar',   mag:30, modes:['single','burst','auto'], boltAP:0, price:38000,
+    ergo:46, rv:122, rh:445, moa:2.4, w:2.90, sight:60, vel:890, noise:52, base:['rail'],
+    slots:['muzzle','barrel','handguard','pistolgrip','stock','optic','mag','foregrip','tactical'],
+    fixed:{ barrel:'ar_bbl_370', handguard:'ar_hg_std', pistolgrip:'ar_pg_std', stock:'ar_st_carb', mag:'ar_mag_30' } },
+
+  { id:'mp5',   name:'MP5',        cal:'9x19',   family:'mp5',  mag:30, modes:['single','burst','auto'], boltAP:0, price:26000,
+    ergo:62, rv:82,  rh:224, moa:3.6, w:2.50, sight:45, vel:380, noise:42,
+    slots:['muzzle','handguard','stock','mount','optic','mag','foregrip','tactical'],
+    fixed:{ handguard:'mp5_hg_std', stock:'mp5_st_a3', mag:'mp5_mag_30' } },
+
+  { id:'mpx',   name:'MPX',        cal:'9x19',   family:'mpx',  mag:30, modes:['single','burst','auto'], boltAP:0, price:33000,
+    ergo:68, rv:74,  rh:209, moa:3.2, w:2.60, sight:50, vel:400, noise:42, base:['rail'],
+    slots:['muzzle','barrel','handguard','stock','optic','mag','foregrip','tactical'],
+    fixed:{ barrel:'mpx_bbl_165', handguard:'mpx_hg_std', stock:'mpx_st_std', mag:'mpx_mag_30' } },
+
+  { id:'vpo',   name:'VPO-136',    cal:'762x39', family:'ak',   mag:10, modes:['single'], boltAP:0, price:14000,
+    ergo:42, rv:152, rh:430, moa:3.8, w:3.40, sight:50, vel:730, noise:55,
+    slots:['muzzle','barrel','gasblock','handguard','dustcover','pistolgrip','stock','mount','optic','mag','foregrip','tactical'],
+    fixed:{ barrel:'ak_bbl_590', handguard:'ak_hg_wood', pistolgrip:'ak_pg_bake', stock:'ak_st_wood', dustcover:'ak_dc_std', gasblock:'ak_gb_std', mag:'ak_mag_10' } },
+
+  { id:'vityaz',name:'PP-19-01',   cal:'9x19',   family:'ak',   mag:30, modes:['single','auto'], boltAP:0, price:19000,
+    ergo:58, rv:86,  rh:235, moa:3.5, w:2.70, sight:45, vel:400, noise:42,
+    slots:['muzzle','handguard','dustcover','pistolgrip','stock','mount','optic','mag','foregrip','tactical'],
+    fixed:{ handguard:'ak_hg_poly', pistolgrip:'ak_pg_bake', stock:'ak_st_poly', dustcover:'ak_dc_std', mag:'vit_mag_30' } },
+
+  { id:'saiga', name:'Saiga-12K',  cal:'12g',    family:'ak12', mag:8,  modes:['single'], boltAP:0, price:30000,
+    ergo:40, rv:460, rh:720, moa:6.0, w:3.80, sight:35, vel:380, noise:58,
+    slots:['muzzle','handguard','dustcover','pistolgrip','stock','mount','optic','mag','foregrip','tactical'],
+    fixed:{ handguard:'ak_hg_poly', pistolgrip:'ak_pg_bake', stock:'ak_st_poly', dustcover:'ak_dc_std', mag:'sg_mag_8' } },
+
+  { id:'svd',   name:'SVD-S',      cal:'762x54', family:'svd',  mag:10, modes:['single'], boltAP:0, price:52000,
+    ergo:40, rv:168, rh:385, moa:1.6, w:4.30, sight:90, vel:830, noise:62,
+    slots:['muzzle','handguard','stock','mount','optic','mag'],
+    fixed:{ handguard:'svd_hg_std', stock:'svd_st_std', mag:'svd_mag_10' } },
+
+  { id:'mosin', name:'Mosin 91/30',cal:'762x54', family:'mosin',mag:5,  modes:['single'], boltAP:2, price:12000,
+    ergo:22, rv:205, rh:480, moa:1.9, w:4.50, sight:80, vel:800, noise:62,
+    slots:['muzzle','stock','mount','optic'],
+    fixed:{ stock:'mos_st_std' } },
+];
+
+/* --- Attachments ---------------------------------------------------------
+   provides / requires drive real compatibility. A suppressor needs a
+   threaded barrel; an optic needs a rail from somewhere. Deltas are additive,
+   recoil deltas are percentages of the platform's base recoil.             */
+function M(o){
+  return Object.assign({ type:'mod', ergo:0, rv:0, rh:0, moa:0, w:0, vel:0, noise:0,
+                         sight:0, zoom:1, provides:[], requires:null, price:0 }, o);
+}
+const MODS = [
+  /* ---- muzzle devices ---- */
+  M({ id:'mz_ak_std',  name:'AK muzzle brake',        slot:'muzzle', fits:['ak','ak12'], requires:'thread', ergo:-1, rv:-6,  rh:-8,  w:0.08, price:2600 }),
+  M({ id:'mz_ak_dtk',  name:'DTK-1 brake',            slot:'muzzle', fits:['ak','ak12'], requires:'thread', ergo:-2, rv:-15, rh:-13, w:0.14, noise:6, price:11000 }),
+  M({ id:'mz_ak_supp', name:'PBS-1 suppressor',       slot:'muzzle', fits:['ak'],        requires:'thread', ergo:-6, rv:-11, rh:-7,  w:0.62, vel:-40, noise:-48, price:34000 }),
+  M({ id:'mz_ar_a2',   name:'A2 flash hider',         slot:'muzzle', fits:['ar'],        requires:'thread', ergo:-1, rv:-4,  rh:-5,  w:0.06, price:1900 }),
+  M({ id:'mz_ar_brake',name:'SureFire MB556K',        slot:'muzzle', fits:['ar','mpx'],  requires:'thread', ergo:-2, rv:-14, rh:-11, w:0.13, noise:5, price:14000 }),
+  M({ id:'mz_ar_supp', name:'SOCOM556 suppressor',    slot:'muzzle', fits:['ar'],        requires:'thread', ergo:-7, rv:-12, rh:-8,  w:0.55, vel:-25, noise:-46, price:52000 }),
+  M({ id:'mz_9_supp',  name:'9mm suppressor',         slot:'muzzle', fits:['mp5','mpx','ak'], requires:'thread', ergo:-5, rv:-9, rh:-6, w:0.44, vel:-15, noise:-52, price:29000 }),
+  M({ id:'mz_12_choke',name:'Saiga choke',            slot:'muzzle', fits:['ak12'],      requires:'thread', ergo:-1, moa:-1.4, w:0.09, price:5200 }),
+  M({ id:'mz_svd_supp',name:'SVD suppressor',         slot:'muzzle', fits:['svd'],       requires:'thread', ergo:-8, rv:-10, rh:-6, w:0.85, vel:-30, noise:-44, price:66000 }),
+  M({ id:'mz_mos_brake',name:'Mosin muzzle brake',    slot:'muzzle', fits:['mosin'],     requires:'thread', ergo:-2, rv:-18, rh:-10, w:0.16, noise:7, price:9000 }),
+
+  /* ---- barrels (thread is not automatic) ---- */
+  M({ id:'ak_bbl_314', name:'AK 314mm barrel',        slot:'barrel', fits:['ak'], provides:['thread'], ergo:6,  rv:5,  rh:4,  moa:0.9,  w:-0.20, vel:-70, noise:-4, price:9000 }),
+  M({ id:'ak_bbl_415', name:'AK 415mm barrel',        slot:'barrel', fits:['ak'], provides:['thread'], price:6500 }),
+  M({ id:'ak_bbl_590', name:'AK 590mm barrel',        slot:'barrel', fits:['ak'], provides:['thread'], ergo:-7, rv:-4, rh:-3, moa:-0.7, w:0.28, vel:75, noise:5, price:13000 }),
+  M({ id:'ak_bbl_nt',  name:'AK 415mm, unthreaded',   slot:'barrel', fits:['ak'], ergo:1, moa:0.1, w:-0.02, price:2800 }),
+  M({ id:'ar_bbl_260', name:'AR 260mm barrel',        slot:'barrel', fits:['ar'], provides:['thread'], ergo:8,  rv:6,  rh:5,  moa:1.1,  w:-0.22, vel:-95, noise:-5, price:14000 }),
+  M({ id:'ar_bbl_370', name:'AR 370mm barrel',        slot:'barrel', fits:['ar'], provides:['thread'], price:11000 }),
+  M({ id:'ar_bbl_508', name:'AR 508mm barrel',        slot:'barrel', fits:['ar'], provides:['thread'], ergo:-9, rv:-5, rh:-4, moa:-0.6, w:0.30, vel:85, noise:6, price:21000 }),
+  M({ id:'mpx_bbl_165',name:'MPX 165mm barrel',       slot:'barrel', fits:['mpx'], provides:['thread'], price:7000 }),
+  M({ id:'mpx_bbl_356',name:'MPX 356mm barrel',       slot:'barrel', fits:['mpx'], provides:['thread'], ergo:-6, rv:-4, rh:-3, moa:-0.5, w:0.25, vel:60, price:16000 }),
+
+  /* ---- gas blocks (AK) ---- */
+  M({ id:'ak_gb_std',  name:'AK gas block',           slot:'gasblock', fits:['ak'], price:1200 }),
+  M({ id:'ak_gb_rail', name:'AK gas block w/ rail',   slot:'gasblock', fits:['ak'], provides:['rail'], ergo:-1, w:0.10, price:7800 }),
+
+  /* ---- handguards ---- */
+  M({ id:'ak_hg_wood', name:'AK wooden handguard',    slot:'handguard', fits:['ak','ak12'], price:1400 }),
+  M({ id:'ak_hg_poly', name:'AK polymer handguard',   slot:'handguard', fits:['ak','ak12'], ergo:2, w:-0.06, price:2400 }),
+  M({ id:'ak_hg_b10',  name:'B-10M rail handguard',   slot:'handguard', fits:['ak','ak12'], provides:['rail','lower'], ergo:5, rv:-6, rh:-5, w:0.24, price:19000 }),
+  M({ id:'ak_hg_zenit',name:'B-11 KeyMod handguard',  slot:'handguard', fits:['ak','ak12'], provides:['rail','lower'], ergo:9, rv:-9, rh:-7, w:0.19, price:31000 }),
+  M({ id:'ar_hg_std',  name:'M4 plastic handguard',   slot:'handguard', fits:['ar'], price:2200 }),
+  M({ id:'ar_hg_quad', name:'Quad-rail handguard',    slot:'handguard', fits:['ar'], provides:['rail','lower'], ergo:-3, rv:-7, rh:-6, w:0.36, price:16000 }),
+  M({ id:'ar_hg_mlok', name:'MLOK free-float rail',   slot:'handguard', fits:['ar'], provides:['rail','lower'], ergo:7, rv:-11, rh:-9, moa:-0.3, w:0.21, price:34000 }),
+  M({ id:'mp5_hg_std', name:'MP5 handguard',          slot:'handguard', fits:['mp5'], price:2000 }),
+  M({ id:'mp5_hg_rail',name:'MP5 tri-rail handguard', slot:'handguard', fits:['mp5'], provides:['rail','lower','thread'], ergo:2, rv:-6, rh:-5, w:0.22, price:15000 }),
+  M({ id:'mpx_hg_std', name:'MPX MLOK handguard',     slot:'handguard', fits:['mpx'], provides:['rail','lower'], price:5000 }),
+  M({ id:'svd_hg_std', name:'SVD handguard',          slot:'handguard', fits:['svd'], provides:['thread'], price:3000 }),
+  M({ id:'svd_hg_rail',name:'SVD chassis handguard',  slot:'handguard', fits:['svd'], provides:['rail','lower','thread'], ergo:4, rv:-12, rh:-9, moa:-0.3, w:0.42, price:44000 }),
+
+  /* ---- dust covers (AK) ---- */
+  M({ id:'ak_dc_std',  name:'AK dust cover',          slot:'dustcover', fits:['ak','ak12'], price:900 }),
+  M({ id:'ak_dc_rail', name:'AK railed dust cover',   slot:'dustcover', fits:['ak','ak12'], provides:['rail'], ergo:-2, moa:0.3, w:0.18, price:12000 }),
+  M({ id:'ak_dc_zenit',name:'B-13 hinged dust cover', slot:'dustcover', fits:['ak','ak12'], provides:['rail'], ergo:-1, w:0.21, price:27000 }),
+
+  /* ---- pistol grips ---- */
+  M({ id:'ak_pg_bake', name:'AK bakelite grip',       slot:'pistolgrip', fits:['ak','ak12'], price:800 }),
+  M({ id:'ak_pg_rk3',  name:'RK-3 ergonomic grip',    slot:'pistolgrip', fits:['ak','ak12'], ergo:8, w:0.03, price:9500 }),
+  M({ id:'ar_pg_std',  name:'M4 A2 grip',             slot:'pistolgrip', fits:['ar'], price:900 }),
+  M({ id:'ar_pg_ergo', name:'Ergo Grip F93',          slot:'pistolgrip', fits:['ar'], ergo:7, w:0.02, price:8200 }),
+
+  /* ---- stocks ---- */
+  M({ id:'ak_st_wood', name:'AK wooden stock',        slot:'stock', fits:['ak','ak12'], price:1600 }),
+  M({ id:'ak_st_poly', name:'AK polymer stock',       slot:'stock', fits:['ak','ak12'], ergo:2, w:-0.10, price:3200 }),
+  M({ id:'ak_st_fold', name:'AK folding stock',       slot:'stock', fits:['ak','ak12'], ergo:6, rv:6, rh:5, w:-0.22, price:11000 }),
+  M({ id:'ak_st_pt1',  name:'PT-1 telescopic stock',  slot:'stock', fits:['ak','ak12'], ergo:5, rv:-13, rh:-10, w:0.16, price:29000 }),
+  M({ id:'ar_st_carb', name:'M4 carbine stock',       slot:'stock', fits:['ar'], price:2200 }),
+  M({ id:'ar_st_magpul',name:'CTR carbine stock',     slot:'stock', fits:['ar'], ergo:4, rv:-9, rh:-7, w:0.08, price:14000 }),
+  M({ id:'ar_st_pre',  name:'PRS precision stock',    slot:'stock', fits:['ar'], ergo:-6, rv:-17, rh:-13, moa:-0.2, w:0.48, price:38000 }),
+  M({ id:'mp5_st_a3',  name:'MP5 A3 sliding stock',   slot:'stock', fits:['mp5'], price:3400 }),
+  M({ id:'mp5_st_fix', name:'MP5 A2 fixed stock',     slot:'stock', fits:['mp5'], ergo:-2, rv:-10, rh:-8, w:0.14, price:6000 }),
+  M({ id:'mpx_st_std', name:'MPX folding stock',      slot:'stock', fits:['mpx'], price:4200 }),
+  M({ id:'svd_st_std', name:'SVD-S folding stock',    slot:'stock', fits:['svd'], price:5000 }),
+  M({ id:'svd_st_chas',name:'SVD chassis stock',      slot:'stock', fits:['svd'], ergo:-4, rv:-16, rh:-12, w:0.55, price:47000 }),
+  M({ id:'mos_st_std', name:'Mosin infantry stock',   slot:'stock', fits:['mosin'], provides:['thread'], price:2000 }),
+  M({ id:'mos_st_arch',name:'Archangel chassis',      slot:'stock', fits:['mosin'], provides:['rail','thread'], ergo:14, rv:-14, rh:-11, w:0.32, price:36000 }),
+
+  /* ---- scope mounts ---- */
+  M({ id:'mnt_ak_side',name:'AK side-rail mount',     slot:'mount', fits:['ak','ak12'], provides:['rail'], ergo:-2, w:0.16, price:8500 }),
+  M({ id:'mnt_svd',    name:'SVD side mount',         slot:'mount', fits:['svd'], provides:['rail'], ergo:-2, w:0.20, price:9000 }),
+  M({ id:'mnt_mos',    name:'Mosin rail mount',       slot:'mount', fits:['mosin'], provides:['rail'], ergo:-2, w:0.14, price:7500 }),
+  M({ id:'mnt_mp5',    name:'MP5 claw mount',         slot:'mount', fits:['mp5'], provides:['rail'], ergo:-1, w:0.12, price:6500 }),
+
+  /* ---- optics (all need a rail from somewhere) ---- */
+  M({ id:'op_kobra',   name:'Kobra red dot',          slot:'optic', fits:'*', requires:'rail', ergo:-2, sight:95,  zoom:1, w:0.23, price:11000 }),
+  M({ id:'op_okp7',    name:'OKP-7 reflex',           slot:'optic', fits:'*', requires:'rail', ergo:-2, sight:100, zoom:1, w:0.21, price:14000 }),
+  M({ id:'op_aimpoint',name:'Aimpoint T-1',           slot:'optic', fits:'*', requires:'rail', ergo:-1, sight:110, zoom:1, w:0.14, price:24000 }),
+  M({ id:'op_eotech',  name:'EOTech holographic',     slot:'optic', fits:'*', requires:'rail', ergo:-3, sight:120, zoom:1, w:0.30, price:31000 }),
+  M({ id:'op_acog',    name:'ACOG 4x',                slot:'optic', fits:'*', requires:'rail', ergo:-6, sight:190, zoom:4, moa:-0.2, w:0.62, price:58000 }),
+  M({ id:'op_pso1',    name:'PSO-1 4x',               slot:'optic', fits:'*', requires:'rail', ergo:-7, sight:200, zoom:4, moa:-0.2, w:0.68, price:42000 }),
+  M({ id:'op_march',   name:'March 3-12x',            slot:'optic', fits:'*', requires:'rail', ergo:-11,sight:280, zoom:8, moa:-0.35,w:0.90, price:105000 }),
+
+  /* ---- foregrips ---- */
+  M({ id:'fg_rk2',     name:'RK-2 foregrip',          slot:'foregrip', fits:'*', requires:'lower', ergo:2,  rv:-9,  rh:-7,  w:0.12, price:8000 }),
+  M({ id:'fg_shift',   name:'SHIFT tactical grip',    slot:'foregrip', fits:'*', requires:'lower', ergo:4,  rv:-12, rh:-10, w:0.10, price:17000 }),
+  M({ id:'fg_stubby',  name:'Stubby foregrip',        slot:'foregrip', fits:'*', requires:'lower', ergo:6,  rv:-6,  rh:-5,  w:0.06, price:6200 }),
+  M({ id:'fg_bipod',   name:'Harris bipod',           slot:'foregrip', fits:'*', requires:'lower', ergo:-7, rv:-22, rh:-18, moa:-0.3, w:0.55, price:26000 }),
+
+  /* ---- tactical ---- */
+  M({ id:'tac_laser',  name:'Laser designator',       slot:'tactical', fits:'*', requires:'lower', ergo:-1, moa:-0.45, w:0.11, price:19000 }),
+  M({ id:'tac_light',  name:'Weapon light',           slot:'tactical', fits:'*', requires:'lower', ergo:-1, sight:15, w:0.14, price:9000 }),
+
+  /* ---- magazines ---- */
+  M({ id:'ak_mag_10',  name:'AK 10-rd magazine',      slot:'mag', fits:['ak'], cap:10, ergo:4,  w:0.14, price:1500 }),
+  M({ id:'ak_mag_30',  name:'AK 30-rd steel mag',     slot:'mag', fits:['ak'], cap:30, w:0.33, price:2400 }),
+  M({ id:'ak_mag_40',  name:'AK 40-rd RPK mag',       slot:'mag', fits:['ak'], cap:40, ergo:-5, w:0.52, price:7800 }),
+  M({ id:'ak74_mag_30',name:'AK-74 30-rd plum mag',   slot:'mag', fits:['ak'], cap:30, ergo:1, w:0.22, price:2900 }),
+  M({ id:'ak74_mag_60',name:'AK-74 60-rd quad mag',   slot:'mag', fits:['ak'], cap:60, ergo:-9, w:0.72, price:24000 }),
+  M({ id:'ar_mag_30',  name:'STANAG 30-rd',           slot:'mag', fits:['ar'], cap:30, w:0.25, price:2600 }),
+  M({ id:'ar_mag_60',  name:'SureFire 60-rd',         slot:'mag', fits:['ar'], cap:60, ergo:-8, w:0.66, price:21000 }),
+  M({ id:'mp5_mag_30', name:'MP5 30-rd',              slot:'mag', fits:['mp5'], cap:30, w:0.20, price:2200 }),
+  M({ id:'mpx_mag_30', name:'MPX 30-rd',              slot:'mag', fits:['mpx'], cap:30, w:0.20, price:2500 }),
+  M({ id:'vit_mag_30', name:'Vityaz 30-rd',           slot:'mag', fits:['ak'], cap:30, w:0.21, price:2300 }),
+  M({ id:'sg_mag_8',   name:'Saiga 8-rd',             slot:'mag', fits:['ak12'], cap:8, w:0.30, price:4000 }),
+  M({ id:'sg_mag_20',  name:'Saiga 20-rd drum',       slot:'mag', fits:['ak12'], cap:20, ergo:-10, w:0.95, price:26000 }),
+  M({ id:'svd_mag_10', name:'SVD 10-rd',              slot:'mag', fits:['svd'], cap:10, w:0.28, price:4500 }),
+];
+
+/* --- Armour --------------------------------------------------------------
+   cls    protection class, compared against ammunition penetration
+   dur    durability — as it wears down the plate stops less
+   zones  which body parts it covers
+   blunt  fraction of damage that comes through when a round is stopped     */
+const ARMOR = [
+  { id:'h_ssh',   name:'SSh-68 steel helmet', type:'helmet', cls:2, dur:30, zones:['head'], blunt:0.32, ergo:-1,  speed:0,  w:1.3, price:8000 },
+  { id:'h_6b47',  name:'6B47 helmet',         type:'helmet', cls:3, dur:45, zones:['head'], blunt:0.30, ergo:-2,  speed:0,  w:1.4, price:24000 },
+  { id:'h_fast',  name:'FAST MT helmet',      type:'helmet', cls:4, dur:46, zones:['head'], blunt:0.28, ergo:-2,  speed:0,  w:1.2, price:41000 },
+  { id:'h_altyn', name:'Altyn heavy helmet',  type:'helmet', cls:5, dur:55, zones:['head'], blunt:0.24, ergo:-4, speed:-3, w:4.2, price:96000 },
+
+  { id:'a_paca',  name:'PACA soft armour',    type:'armor', cls:2, dur:40, zones:['thorax','stomach'], blunt:0.36, ergo:-1,  speed:-1, w:3.0, price:12000 },
+  { id:'a_6b23',  name:'6B23-1 vest',         type:'armor', cls:4, dur:55, zones:['thorax','stomach'], blunt:0.30, ergo:-3,  speed:-3, w:6.5, price:38000 },
+  { id:'a_6b13',  name:'6B13 assault vest',   type:'armor', cls:4, dur:50, zones:['thorax','stomach'], blunt:0.31, ergo:-2,  speed:-2, w:5.5, price:44000 },
+  { id:'a_gzhel', name:'Gzhel-K body armour', type:'armor', cls:4, dur:60, zones:['thorax','stomach','larm','rarm'], blunt:0.29, ergo:-4, speed:-5, w:8.5, price:62000 },
+  { id:'a_slick', name:'Slick plate carrier', type:'armor', cls:6, dur:80, zones:['thorax'], blunt:0.20, ergo:-4, speed:-4, w:8.0, price:190000 },
+  { id:'a_zhuk',  name:'Zhuk-6a heavy armour',type:'armor', cls:6, dur:85, zones:['thorax','stomach','larm','rarm'], blunt:0.22, ergo:-6, speed:-9, w:12.5, price:210000 },
+];
+
+/* Chest rigs — carrying capacity, sometimes armoured. cap = pouches for
+   magazines and medical items carried into the raid.                       */
+const RIGS = [
+  { id:'r_scav',  name:'Scav rig',           type:'rig', cap:4,  cls:0, dur:0,  zones:[], blunt:0, ergo:0,  speed:0,  w:0.7, price:3000 },
+  { id:'r_blackrock',name:'Blackrock rig',   type:'rig', cap:8,  cls:0, dur:0,  zones:[], blunt:0, ergo:-1, speed:-1, w:1.4, price:19000 },
+  { id:'r_avs',   name:'AVS armoured rig',   type:'rig', cap:7,  cls:4, dur:45, zones:['thorax','stomach'], blunt:0.31, ergo:-3, speed:-3, w:7.0, price:88000 },
+  { id:'r_bank',  name:'Bank robber rig',    type:'rig', cap:12, cls:0, dur:0,  zones:[], blunt:0, ergo:-2, speed:-2, w:1.9, price:41000 },
+];
+
+/* --- Medical -------------------------------------------------------------
+   pool   hit points the item can restore before it is used up
+   cures  which conditions it removes
+   ap     action points to use in a raid                                    */
+const MEDS = [
+  { id:'m_bandage', name:'Army bandage',    type:'med', pool:0,    ap:2, cures:['light'],                 price:2500 },
+  { id:'m_tourni',  name:'Esmarch tourniquet',type:'med',pool:0,   ap:3, cures:['heavy','light'],         price:6000 },
+  { id:'m_splint',  name:'Aluminium splint', type:'med', pool:0,   ap:3, cures:['frac'],                  price:3500 },
+  { id:'m_ai2',     name:'AI-2 medkit',      type:'med', pool:100, ap:3, cures:[],                        price:7000 },
+  { id:'m_car',     name:'Car first aid kit',type:'med', pool:220, ap:3, cures:['light'],                 price:11000 },
+  { id:'m_salewa',  name:'Salewa first aid', type:'med', pool:400, ap:3, cures:['light','heavy'],         price:19000 },
+  { id:'m_ifak',    name:'IFAK',             type:'med', pool:300, ap:3, cures:['light','heavy'],         price:22000 },
+  { id:'m_grizzly', name:'Grizzly medkit',   type:'med', pool:1800,ap:4, cures:['light','heavy','frac'],  price:45000 },
+  { id:'m_morphine',name:'Morphine injector',type:'med', pool:0,   ap:2, cures:['pain'],                  price:15000 },
+];
+
+/* --- Loot & keys ---------------------------------------------------------
+   Found in containers. Rarity is the inverse of how often it rolls.        */
+const LOOT = [
+  { id:'l_bolts',  name:'Bolts',              type:'loot', w:0.20, price:1800,   rar:1 },
+  { id:'l_screw',  name:'Screw nut',          type:'loot', w:0.15, price:2200,   rar:1 },
+  { id:'l_wires',  name:'Wires',              type:'loot', w:0.30, price:4500,   rar:1 },
+  { id:'l_powder', name:'Gunpowder',          type:'loot', w:0.45, price:9000,   rar:2 },
+  { id:'l_water',  name:'Water bottle',       type:'loot', w:0.60, price:6000,   rar:1 },
+  { id:'l_stew',   name:'Tinned stew',        type:'loot', w:0.40, price:5200,   rar:1 },
+  { id:'l_moon',   name:'Moonshine',          type:'loot', w:0.90, price:52000,  rar:4 },
+  { id:'l_chain',  name:'Gold chain',         type:'loot', w:0.05, price:38000,  rar:3 },
+  { id:'l_watch',  name:'Roler Submariner',   type:'loot', w:0.10, price:74000,  rar:4 },
+  { id:'l_gpu',    name:'Graphics card',      type:'loot', w:0.75, price:118000, rar:5 },
+  { id:'l_ledx',   name:'LEDX transilluminator',type:'loot',w:0.20,price:165000, rar:6 },
+  { id:'l_btc',    name:'Physical bitcoin',   type:'loot', w:0.05, price:210000, rar:7 },
+  { id:'l_docs',   name:'Sealed documents',   type:'loot', w:0.05, price:26000,  rar:3 },
+  { id:'l_tools',  name:'Toolset',            type:'loot', w:1.20, price:31000,  rar:3 },
+];
+
+const KEYS = [
+  { id:'k_dorm',  name:'Dormitory room key',  type:'key', w:0.02, price:34000, opens:'car' },
+  { id:'k_gate',  name:'Factory gate key',    type:'key', w:0.02, price:28000, opens:'gate' },
+  { id:'k_bunker',name:'Bunker hermetic door',type:'key', w:0.02, price:52000, opens:'bunker' },
+];
+
+/* --- Master item index --------------------------------------------------- */
+const ITEMS = {};
+function indexItems(){
+  const push = (arr, kind) => arr.forEach(i => { ITEMS[i.id] = Object.assign({ kind }, i); });
+  push(AMMO,'ammo'); push(MODS,'mod'); push(ARMOR,'armor'); push(RIGS,'rig');
+  push(MEDS,'med');  push(LOOT,'loot'); push(KEYS,'key');
+  PLATFORMS.forEach(p => { ITEMS[p.id] = Object.assign({ kind:'platform', type:'weapon' }, p); });
+}
+indexItems();
+
+const CAT_OF = { ammo:'ammo', mod:'mods', armor:'gear', rig:'gear', med:'meds', loot:'loot', key:'keys', platform:'weapons' };
+const TAGCLS = { platform:'w', mod:'m', ammo:'w', armor:'a', rig:'a', med:'med', loot:'l', key:'k' };
+
+/* --- Traders -------------------------------------------------------------
+   Each trader stocks a subset of items behind loyalty levels, buys certain
+   categories, and pays a fraction of list price.                           */
+const TRADERS = [
+  { id:'prapor', name:'PRAPOR', blurb:'Ex-military quartermaster. Kalashnikovs, ammunition, Russian gear.',
+    buys:['ammo','mod','platform','armor'], rate:0.42,
+    stock:[ ['akm',1],['ak74n',1],['vpo',1],['mosin',1],['vityaz',2],['saiga',3],
+            ['545_ps',1],['762_ps',1],['9_pst',1],['54_lps',1],['545_t',1],['762_hp',1],
+            ['545_bt',2],['762_bp',3],['54_7n1',3],['545_bs',4],['762_ap',4],['54_snb',4],
+            ['ak_mag_30',1],['ak74_mag_30',1],['ak_mag_10',1],['vit_mag_30',1],['sg_mag_8',1],
+            ['ak_mag_40',2],['ak74_mag_60',3],['sg_mag_20',3],['svd_mag_10',2],
+            ['ak_st_wood',1],['ak_st_poly',1],['ak_pg_bake',1],['ak_hg_wood',1],['ak_gb_std',1],['ak_dc_std',1],
+            ['ak_bbl_415',1],['ak_bbl_314',2],['ak_bbl_590',2],['ak_bbl_nt',1],['mz_ak_std',1],['mz_ak_dtk',2],
+            ['h_ssh',1],['h_6b47',2],['a_paca',1],['a_6b23',3],['a_6b13',3],['svd',3],['mnt_ak_side',2] ] },
+
+  { id:'therapist', name:'THERAPIST', blurb:'Runs the clinic. Medical supplies, and she buys anything valuable.',
+    buys:['med','loot'], rate:0.55,
+    stock:[ ['m_bandage',1],['m_splint',1],['m_ai2',1],['m_tourni',1],['m_car',2],
+            ['m_salewa',2],['m_ifak',3],['m_morphine',3],['m_grizzly',4] ] },
+
+  { id:'skier', name:'SKIER', blurb:'Black-market fixer. Western weapons, suppressors, keys.',
+    buys:['platform','mod','key','loot'], rate:0.46,
+    stock:[ ['mp5',1],['m4a1',2],['mpx',3],
+            ['9_pst',1],['9_gt',1],['9_sub',2],['9_ap',3],['9_rip',3],
+            ['mp5_mag_30',1],['mpx_mag_30',1],['ar_mag_30',1],['ar_mag_60',3],
+            ['mz_9_supp',3],['mz_ak_supp',3],['mz_ar_supp',4],['mz_svd_supp',4],
+            ['k_dorm',2],['k_gate',2],['k_bunker',4],
+            ['mp5_st_a3',1],['mp5_st_fix',2],['mp5_hg_std',1],['mp5_hg_rail',2],['mnt_mp5',2],['mpx_bbl_356',3] ] },
+
+  { id:'mechanic', name:'MECHANIC', blurb:'Gunsmith. Rails, optics, triggers — everything that makes a rifle shoot straight.',
+    buys:['mod','ammo','platform'], rate:0.50,
+    stock:[ ['op_kobra',1],['op_okp7',1],['op_aimpoint',2],['op_eotech',3],['op_acog',3],['op_pso1',3],['op_march',4],
+            ['ak_hg_b10',2],['ak_hg_zenit',3],['ak_dc_rail',2],['ak_dc_zenit',3],['ak_gb_rail',2],
+            ['ar_hg_quad',2],['ar_hg_mlok',3],['ar_st_magpul',2],['ar_st_pre',4],['ar_pg_ergo',2],['ak_pg_rk3',2],
+            ['ak_st_fold',2],['ak_st_pt1',3],['fg_stubby',1],['fg_rk2',2],['fg_shift',3],['fg_bipod',3],
+            ['tac_laser',3],['tac_light',2],['mz_ar_a2',1],['mz_ar_brake',2],['mz_12_choke',2],['mz_mos_brake',2],
+            ['ar_bbl_370',1],['ar_bbl_260',2],['ar_bbl_508',3],['mos_st_arch',3],['mnt_mos',2],['mnt_svd',2],
+            ['svd_hg_rail',4],['svd_st_chas',4],['556_m855',2],['556_m855a1',3],['556_m995',4],['556_hp',1],['556_tr',1],
+            ['12_buck',1],['12_slug',2],['12_flech',3],['12_ap20',4],['12_mag',1],
+            ['r_scav',1],['r_blackrock',2],['r_avs',3],['r_bank',3],['h_fast',3],['h_altyn',4],['a_gzhel',3],['a_slick',4],['a_zhuk',4] ] },
+];
+
+/* --- Maps ---------------------------------------------------------------- */
+const MAPS = [
+  { id:'factory', name:'FACTORY', w:44, h:34, blurb:'Tight industrial interior. Contact is immediate and close.',
+    style:'industrial', enemies:[3,4], raiderChance:0.15, bossChance:0.06, containers:[9,13],
+    lootBias:1.0, extracts:2, keyExtract:'gate', minLevel:1, tiles:3 },
+  { id:'customs', name:'CUSTOMS', w:58, h:38, blurb:'Warehouses along a road. Mid-range lanes, plenty to loot.',
+    style:'town', enemies:[4,5], raiderChance:0.38, bossChance:0.12, containers:[15,21],
+    lootBias:1.25, extracts:3, keyExtract:'car', minLevel:1, tiles:4 },
+  { id:'woods', name:'WOODS', w:64, h:42, blurb:'Open treeline. Long sightlines punish iron sights and reward optics.',
+    style:'forest', enemies:[4,5], raiderChance:0.46, bossChance:0.15, containers:[12,17],
+    lootBias:1.15, extracts:3, keyExtract:null, minLevel:3, tiles:5 },
+  { id:'labs', name:'THE LAB', w:50, h:36, blurb:'Sealed underground facility. Only raiders down here, and the best loot on the map.',
+    style:'lab', enemies:[4,6], raiderChance:0.70, bossChance:0.15, containers:[16,22],
+    lootBias:2.4, extracts:2, keyExtract:'bunker', minLevel:8, tiles:6 },
+];
+
+/* --- Enemy templates ----------------------------------------------------- */
+const ENEMY_TYPES = {
+  scav:     { name:'Scav',        hpMult:1.00, acc:-0.34, ap:6, sight:13, xp:120,  tier:0, flee:0.35 },
+  marksman: { name:'Scav Sniper', hpMult:1.00, acc:-0.12, ap:5, sight:24, xp:220,  tier:1, flee:0.40 },
+  raider:   { name:'Raider',      hpMult:1.00, acc:-0.02, ap:8, sight:17, xp:520,  tier:2, flee:0.20 },
+  boss:     { name:'Kolchak',     hpMult:1.35, acc:0.05,  ap:9, sight:19, xp:1800, tier:3, flee:0.00 },
+  guard:    { name:'Boss Guard',  hpMult:1.10, acc:0.00,  ap:8, sight:17, xp:700,  tier:2, flee:0.15 },
+};
+
+/* Gear packages the AI spawns with, by tier. */
+const AI_KITS = [
+  { guns:[['vpo','762_ps'],['saiga','12_buck'],['mosin','54_lps'],['vityaz','9_pst']],
+    armor:[null,null,'a_paca'], helm:[null,null,'h_ssh'], loot:[0,2] },
+  { guns:[['akm','762_ps'],['ak74n','545_ps'],['mosin','54_7n1'],['saiga','12_slug']],
+    armor:[null,'a_paca','a_6b13'], helm:[null,'h_ssh','h_6b47'], loot:[1,3] },
+  { guns:[['ak74n','545_bp'],['m4a1','556_m855a1'],['akm','762_bp'],['mp5','9_ap']],
+    armor:['a_6b23','a_6b13','r_avs'], helm:['h_6b47','h_fast'], loot:[2,4] },
+  { guns:[['m4a1','556_m995'],['ak74n','545_bs'],['svd','54_snb']],
+    armor:['a_slick','a_zhuk'], helm:['h_fast','h_altyn'], loot:[4,7] },
+];
+
+/* --- Tasks --------------------------------------------------------------- */
+const QUESTS = [
+  { id:'q1', trader:'prapor', name:'Debut',            desc:'Eliminate 5 Scavs.',                                 type:'kill',   target:5,  filter:{type:'scav'},          rub:35000,  xp:1200, unlock:1 },
+  { id:'q2', trader:'therapist', name:'Shortage',      desc:'Extract with 3 medical items found in raid.',        type:'extract_item', target:3, filter:{kind:'med'},     rub:42000,  xp:1500, unlock:1 },
+  { id:'q3', trader:'prapor', name:'Checking',         desc:'Survive and extract from Customs twice.',            type:'extract_map', target:2, filter:{map:'customs'},   rub:55000,  xp:2200, unlock:2 },
+  { id:'q4', trader:'mechanic', name:'Gunsmith I',     desc:'Build a weapon with ergonomics 60 or higher.',        type:'build',  target:1,  filter:{ergo:60},              rub:48000,  xp:1800, unlock:2 },
+  { id:'q5', trader:'skier', name:'Silent Caliber',    desc:'Kill 4 enemies using a suppressed weapon.',           type:'kill',   target:4,  filter:{suppressed:true},      rub:76000,  xp:2600, unlock:3 },
+  { id:'q6', trader:'mechanic', name:'Gunsmith II',    desc:'Build a weapon with vertical recoil 105 or lower.',   type:'build',  target:1,  filter:{rv:105},               rub:92000,  xp:3200, unlock:3 },
+  { id:'q7', trader:'prapor', name:'Punisher',         desc:'Kill 6 enemies wearing class 4 armour or better.',    type:'kill',   target:6,  filter:{armored:4},            rub:130000, xp:4500, unlock:4 },
+  { id:'q8', trader:'therapist', name:'Sanitary Zone', desc:'Extract from The Lab once.',                          type:'extract_map', target:1, filter:{map:'labs'},      rub:210000, xp:7000, unlock:4 },
+];
+/* ==========================================================================
+   SECTION 2 — CORE ENGINE
+   Random numbers, weapon stat resolution, attachment compatibility,
+   the body model, and the ballistics/armour resolver that every shot in the
+   game — player or AI — goes through.
+   ========================================================================== */
+
+const METERS_PER_TILE = 3;
+const clamp = (v,a,b) => v < a ? a : v > b ? b : v;
+const lerp  = (a,b,t) => a + (b-a)*t;
+
+/* Seeded RNG so a raid can be replayed and the maths can be tested. */
+function RNG(seed){
+  let s = seed >>> 0 || 1;
+  const next = () => { s ^= s<<13; s>>>=0; s ^= s>>17; s ^= s<<5; s>>>=0; return s / 4294967296; };
+  return {
+    next,
+    int:(a,b)=>a + Math.floor(next()*(b-a+1)),
+    chance:p=>next() < p,
+    pick:arr=>arr[Math.floor(next()*arr.length)],
+    shuffle(arr){ for(let i=arr.length-1;i>0;i--){ const j=Math.floor(next()*(i+1)); [arr[i],arr[j]]=[arr[j],arr[i]]; } return arr; },
+    weighted(pairs){ let t=0; for(const p of pairs) t+=p[1]; let r=next()*t;
+      for(const p of pairs){ r-=p[1]; if(r<=0) return p[0]; } return pairs[pairs.length-1][0]; },
+  };
+}
+
+/* ------------------------------------------------------------------ *
+ *  Weapon building — compatibility                                    *
+ * ------------------------------------------------------------------ */
+
+/* A gun is { plat, mods:{slot:modId}, ammo, name }. Factory parts come
+   from the platform's `fixed` map and cost nothing. */
+function newGun(platId, name){
+  const p = ITEMS[platId];
+  return { plat:platId, mods:Object.assign({}, p.fixed||{}), ammo:defaultAmmo(p.cal), name:name || p.name, uid:'g'+(Math.random()*1e9|0) };
+}
+function defaultAmmo(cal){
+  const list = AMMO.filter(a=>a.cal===cal).sort((a,b)=>a.price-b.price);
+  return list[Math.min(1,list.length-1)].id;
+}
+function installedParts(g){
+  const out = [];
+  for(const s in g.mods){ const m = ITEMS[g.mods[s]]; if(m) out.push(m); }
+  return out;
+}
+/* Everything the current configuration offers: rails, lower rails, threads. */
+function providedSet(g){
+  const p = ITEMS[g.plat];
+  const set = new Set(p.base || []);
+  for(const m of installedParts(g)) for(const pr of m.provides) set.add(pr);
+  return set;
+}
+const REQ_LABEL = { rail:'a rail (dust cover, rail handguard or side mount)',
+                    lower:'a lower rail (rail handguard)',
+                    thread:'a threaded barrel' };
+
+/* Can this mod go on this gun right now, and if not, why not? */
+function canInstall(g, mod){
+  const p = ITEMS[g.plat];
+  if(!p.slots.includes(mod.slot)) return { ok:false, why:'No '+mod.slot+' slot on this platform' };
+  if(mod.fits !== '*' && !mod.fits.includes(p.family)) return { ok:false, why:'Does not fit the '+p.name };
+  if(mod.requires){
+    // recompute provisions as if the current occupant of this slot were removed
+    const test = { plat:g.plat, mods:Object.assign({}, g.mods) };
+    delete test.mods[mod.slot];
+    if(!providedSet(test).has(mod.requires)) return { ok:false, why:'Requires '+(REQ_LABEL[mod.requires]||mod.requires) };
+  }
+  return { ok:true };
+}
+/* Removing a part can orphan something that depended on it. */
+function dependentsOf(g, slot){
+  const test = { plat:g.plat, mods:Object.assign({}, g.mods) };
+  delete test.mods[slot];
+  const provided = providedSet(test);
+  const orphans = [];
+  for(const s in g.mods){
+    if(s === slot) continue;
+    const m = ITEMS[g.mods[s]];
+    if(m && m.requires && !provided.has(m.requires)) orphans.push(s);
+  }
+  return orphans;
+}
+
+/* ------------------------------------------------------------------ *
+ *  Weapon building — derived statistics                               *
+ * ------------------------------------------------------------------ */
+function resolveWeapon(g){
+  const p = ITEMS[g.plat];
+  let ergo = p.ergo, rvPct = 0, rhPct = 0, moa = p.moa, w = p.w,
+      vel = p.vel, noise = p.noise, sight = p.sight, zoom = 1, cap = p.mag, suppressed = false;
+
+  for(const m of installedParts(g)){
+    ergo += m.ergo; rvPct += m.rv; rhPct += m.rh; moa += m.moa;
+    w += m.w; vel += m.vel; noise += m.noise;
+    if(m.sight) sight = Math.max(sight, m.sight);
+    if(m.zoom > zoom) zoom = m.zoom;
+    if(m.cap) cap = m.cap;
+    if(m.noise <= -30) suppressed = true;
+  }
+  ergo = clamp(Math.round(ergo), 5, 120);
+  const rv = Math.max(12, Math.round(p.rv * (1 + rvPct/100)));
+  const rh = Math.max(20, Math.round(p.rh * (1 + rhPct/100)));
+  moa = Math.max(0.35, +moa.toFixed(2));
+
+  const ammo = ITEMS[g.ammo] || ITEMS[defaultAmmo(p.cal)];
+  return {
+    id:g.uid, name:g.name || p.name, plat:p.id, platName:p.name, family:p.family,
+    cal:p.cal, ergo, rv, rh, moa, weight:+w.toFixed(2), vel:Math.round(vel),
+    noise:Math.max(12, Math.round(noise)), sight:Math.round(sight), zoom,
+    mag:cap, modes:p.modes, boltAP:p.boltAP||0, suppressed,
+    ammo:ammo.id, ammoName:ammo.name,
+    apShot:  clamp(Math.round(4.6 - (ergo-40)/26), 2, 6),
+    apReload:clamp(Math.round(4.6 - (ergo-40)/28), 2, 6),
+  };
+}
+/* Rounds fired and action points spent, per fire mode. */
+const FIRE_MODES = {
+  single:{ label:'Single', rounds:1, apAdd:0 },
+  burst: { label:'Burst',  rounds:3, apAdd:1 },
+  auto:  { label:'Auto',   rounds:6, apAdd:2 },
+};
+function totalWeight(kit){
+  let w = kit.gun ? kit.gun.weight : 0;
+  if(kit.armor)  w += ITEMS[kit.armor].w;
+  if(kit.helmet) w += ITEMS[kit.helmet].w;
+  if(kit.rig)    w += ITEMS[kit.rig].w;
+  w += (kit.spareMags||0) * 0.35;
+  for(const m of (kit.meds||[])) w += 0.35;
+  return +w.toFixed(2);
+}
+
+/* ------------------------------------------------------------------ *
+ *  The body                                                           *
+ * ------------------------------------------------------------------ */
+const LIMBS = ['head','thorax','stomach','larm','rarm','lleg','rleg'];
+const LIMB_MAX = { head:35, thorax:85, stomach:70, larm:60, rarm:60, lleg:65, rleg:65 };
+const LIMB_NAME = { head:'HEAD', thorax:'THORAX', stomach:'STOM', larm:'L ARM', rarm:'R ARM', lleg:'L LEG', rleg:'R LEG' };
+const VITAL = { head:true, thorax:true };
+
+function newBody(mult){
+  const b = {};
+  for(const l of LIMBS) b[l] = { hp:Math.round(LIMB_MAX[l]*(mult||1)), max:Math.round(LIMB_MAX[l]*(mult||1)) };
+  return b;
+}
+const HIT_TABLE = [['thorax',35],['stomach',15],['head',8],['larm',10],['rarm',10],['lleg',11],['rleg',11]];
+
+function rollHitLocation(R, tgt){
+  const mods = {};
+  for(const [l] of HIT_TABLE) mods[l] = 1;
+  if(tgt.inCover){ mods.lleg=0.22; mods.rleg=0.22; mods.stomach=0.5; mods.thorax=1.25; mods.head=1.45; }
+  if(tgt.stance==='prone'){ mods.head*=1.35; mods.thorax*=1.1; mods.lleg*=0.45; mods.rleg*=0.45; mods.stomach*=0.7; }
+  else if(tgt.stance==='crouch'){ mods.lleg*=0.7; mods.rleg*=0.7; mods.thorax*=1.1; }
+  return R.weighted(HIT_TABLE.map(([l,wt])=>[l, wt*mods[l]]));
+}
+
+/* Which piece of armour, if any, is in the way of this body part.
+   Only the highest-class covering piece counts. */
+function armorAt(ent, zone){
+  const cands = [];
+  for(const slot of ['helmet','armor','rig']){
+    const worn = ent[slot];
+    if(!worn || worn.dur <= 0) continue;
+    const it = ITEMS[worn.id];
+    if(it && it.zones && it.zones.includes(zone) && it.cls > 0) cands.push(worn);
+  }
+  if(!cands.length) return null;
+  cands.sort((a,b)=>ITEMS[b.id].cls - ITEMS[a.id].cls);
+  return cands[0];
+}
+
+/* ------------------------------------------------------------------ *
+ *  Ballistics                                                         *
+ * ------------------------------------------------------------------ */
+
+/* Penetration power bleeds off with distance; slow rounds bleed faster. */
+function penAtRange(pen, vel, metres){
+  const loss = (metres/100) * (900/Math.max(vel,150)) * 2.4;
+  return Math.max(pen*0.35, pen - loss);
+}
+/* Logistic curve on (penetration - armour resistance). Worn plates stop
+   less: at zero durability a class 6 plate performs like a fresh class 2. */
+function penChance(pen, cls, durFrac){
+  if(!cls) return 1;
+  const resist = cls * 10 * (0.30 + 0.70*clamp(durFrac,0,1));
+  return clamp(1/(1 + Math.exp(-(pen - resist)/7.5)), 0.01, 0.995);
+}
+
+/* Probability a single projectile connects. This is the function the whole
+   weapon-building system feeds into. */
+function hitChance(sh, tgt, distTiles, aimAP, shotIndex){
+  const w = sh.gun, m = distTiles * METERS_PER_TILE;
+
+  // Baseline marksmanship. Mechanical dispersion alone would make every shot
+  // inside 50 m a certainty, so handling sets the ceiling first: a well-built
+  // weapon points faster and steadier than a stock one.
+  let c = 0.62 + clamp((w.ergo - 40)/240, -0.12, 0.20);
+  // optics steady the shot at every range, not only at distance
+  c *= 1 + clamp((w.sight - 55)/600, 0, 0.12);
+
+  // mechanical dispersion, in centimetres of spread at the target
+  const spreadCm = w.moa * 2.908 * (m/100);
+  c *= clamp(1 - spreadCm/55, 0.20, 1);
+
+  // past what the sights can resolve, accuracy collapses
+  if(m > w.sight) c *= clamp(1 - (m - w.sight)/(w.sight*1.15), 0.08, 1);
+
+  // recoil climb across a burst
+  if(shotIndex > 0) c *= clamp(1 - (w.rv/100)*shotIndex*0.085 - (w.rh/1000)*shotIndex*0.05, 0.12, 1);
+
+  // deliberate aiming, up to three extra action points
+  c *= 1 + Math.min(aimAP,3) * 0.09;
+
+  // stance, both ends
+  c *= sh.stance==='prone' ? 1.16 : sh.stance==='crouch' ? 1.07 : 1;
+  c *= tgt.stance==='prone' ? 0.76 : tgt.stance==='crouch' ? 0.87 : 1;
+  if(tgt.inCover) c *= 0.66;
+  if(tgt.moved)   c *= 0.90;
+
+  // wounded arms wreck your hold
+  const arms = (sh.body.larm.hp<=0 ? 1:0) + (sh.body.rarm.hp<=0 ? 1:0);
+  if(arms) c *= (arms===2 ? 0.55 : 0.76);
+  else {
+    const frac = (sh.body.larm.hp/sh.body.larm.max + sh.body.rarm.hp/sh.body.rarm.max)/2;
+    if(frac < 1) c *= lerp(0.88, 1, frac);
+  }
+  if(sh.effects && sh.effects.pain) c *= 0.88;
+
+  c *= (1 + (sh.accBonus||0));
+  return clamp(c, 0.02, 0.97);
+}
+
+/* The distance at which this weapon still lands half its shots on a
+   standing, uncovered target — shown in the workbench. */
+function effectiveRange(gunStats){
+  const dummySh = { gun:gunStats, stance:'stand', body:newBody(1), effects:{}, accBonus:0 };
+  const dummyTg = { stance:'stand', inCover:false, moved:false };
+  let lo = 1, hi = 400, best = 0;
+  for(let m = 10; m <= 400; m += 5){
+    if(hitChance(dummySh, dummyTg, m/METERS_PER_TILE, 2, 0) >= 0.5) best = m; else break;
+  }
+  return best;
+}
+
+/* Apply damage to one body part, with the consequences of blacking it out. */
+function applyDamage(ent, zone, dmg, log){
+  const part = ent.body[zone];
+  if(!part) return false;
+  const wasUp = part.hp > 0;
+  // a destroyed limb takes extra punishment and leaks into the thorax
+  if(!wasUp && !VITAL[zone]){
+    ent.body.thorax.hp = Math.max(0, ent.body.thorax.hp - dmg*0.5);
+  } else {
+    part.hp -= dmg;
+    if(part.hp < 0){
+      const overflow = -part.hp;
+      part.hp = 0;
+      if(!VITAL[zone]) ent.body.thorax.hp = Math.max(0, ent.body.thorax.hp - overflow*0.5);
+      if(wasUp && log && !VITAL[zone]) log(LIMB_NAME[zone]+' destroyed', 'warn');
+    }
+  }
+  if(ent.body.head.hp <= 0 || ent.body.thorax.hp <= 0){ ent.alive = false; return true; }
+  return false;
+}
+
+/* ------------------------------------------------------------------ *
+ *  The shot                                                           *
+ * ------------------------------------------------------------------ */
+/* Resolves one trigger pull (which may be several rounds, and each round
+   may be several projectiles). Returns a report the UI turns into log
+   lines. Identical code path for the player and every AI. */
+function fireWeapon(R, sh, tgt, distTiles, opts){
+  opts = opts || {};
+  const mode = opts.mode || 'single';
+  const fm = FIRE_MODES[mode];
+  const w = sh.gun, ammo = ITEMS[w.ammo];
+  const metres = distTiles * METERS_PER_TILE;
+  const rounds = Math.min(fm.rounds, sh.magLoaded);
+  const rep = { rounds:0, hits:0, dmg:0, pen:0, blocked:0, killed:false, locations:[], armorBroke:false, headshot:false };
+
+  for(let i = 0; i < rounds; i++){
+    sh.magLoaded--; rep.rounds++;
+    const hc = hitChance(sh, tgt, distTiles, opts.aimAP||0, i);
+    const pellets = ammo.pel || 1;
+
+    for(let p = 0; p < pellets; p++){
+      // buckshot: a wide pattern is generous up close and useless far away
+      let phc = hc;
+      if(pellets > 1) phc = clamp(hc * (distTiles < 5 ? 1.20 : distTiles < 12 ? 0.85 : 0.45), 0.01, 0.95);
+      if(!R.chance(phc)) continue;
+
+      const zone = rollHitLocation(R, tgt);
+      const plate = armorAt(tgt, zone);
+      const pen = penAtRange(ammo.pen, ammo.vel, metres);
+      let dmg = ammo.dmg * clamp(1 - metres/1400, 0.62, 1);
+      let penetrated = true;
+
+      if(plate){
+        const it = ITEMS[plate.id];
+        const durFrac = plate.dur / it.dur;
+        penetrated = R.chance(penChance(pen, it.cls, durFrac));
+        // the plate takes a beating either way, more when it stops the round
+        const wear = ammo.aDmg * dmg * (penetrated ? 0.45 : 1.0) * 0.16;
+        plate.dur = Math.max(0, plate.dur - wear);
+        if(plate.dur <= 0) rep.armorBroke = true;
+
+        if(penetrated){
+          // even a defeated plate saps energy
+          dmg *= clamp(0.55 + (pen - it.cls*10)/60, 0.55, 1);
+        } else {
+          dmg *= it.blunt * (1 - it.cls*0.02);
+          rep.blocked++;
+        }
+      }
+      if(penetrated){
+        rep.pen++;
+        if(R.chance(ammo.frag) && zone !== 'head') dmg *= 1.5;   // fragmentation
+      }
+      dmg = Math.round(dmg);
+      if(dmg <= 0) continue;
+
+      rep.hits++; rep.dmg += dmg; rep.locations.push(zone);
+      if(zone === 'head') rep.headshot = true;
+
+      // bleeding and fractures only happen on a real wound channel
+      if(penetrated && tgt.effects){
+        if(R.chance(clamp(dmg/230, 0, 0.28))) addEffect(tgt,'heavy',zone);
+        else if(R.chance(0.30))              addEffect(tgt,'light',zone);
+        if((zone==='lleg'||zone==='rleg') && dmg > 32 && R.chance(0.22)) addEffect(tgt,'frac',zone);
+      }
+      if(applyDamage(tgt, zone, dmg, opts.log)){ rep.killed = true; break; }
+    }
+    if(rep.killed) break;
+  }
+  return rep;
+}
+
+function addEffect(ent, kind, zone){
+  if(!ent.effects) return;
+  if(kind === 'frac'){ ent.effects.frac[zone] = true; return; }
+  const existing = ent.effects.bleeds.find(b=>b.zone===zone && b.kind===kind);
+  if(existing) return;
+  if(kind === 'heavy') ent.effects.bleeds = ent.effects.bleeds.filter(b=>!(b.zone===zone && b.kind==='light'));
+  ent.effects.bleeds.push({ kind, zone });
+}
+function hasEffect(ent, kind){
+  if(kind === 'frac') return Object.keys(ent.effects.frac).length > 0;
+  return ent.effects.bleeds.some(b=>b.kind===kind);
+}
+/* Bleeding ticks at the end of a turn. Heavy bleeds kill. */
+function tickEffects(ent, log){
+  let total = 0;
+  for(const b of ent.effects.bleeds){
+    const d = b.kind === 'heavy' ? 7 : 3;
+    total += d;
+    applyDamage(ent, b.zone, d, null);
+  }
+  if(total && log) log('Bleeding for '+total, 'dmg');
+  return total;
+}
+
+/* Movement and aiming cost, given the state of your legs and your load. */
+function moveCost(ent){
+  let c = ent.stance === 'prone' ? 2 : 1;
+  const legsOut = (ent.body.lleg.hp<=0?1:0) + (ent.body.rleg.hp<=0?1:0);
+  if(legsOut && !ent.effects.painkiller) c += legsOut;
+  if(hasEffect(ent,'frac') && !ent.effects.painkiller) c += 1;
+  return c;
+}
+/* Action points left after what you are carrying. Bulky plates hamper you
+   beyond their raw mass, which is what `speed` represents — it is folded into
+   the load here rather than taxed separately, so armour is costly but never
+   self-defeating. Shared with the deploy screen so the preview cannot drift. */
+function apFromLoad(baseAP, loadKg, armorId){
+  let load = loadKg || 0;
+  if(armorId) load -= (ITEMS[armorId].speed || 0) * 0.4;
+  return clamp(baseAP - Math.floor(Math.max(0, load - 18) / 7), 3, 14);
+}
+function maxAPFor(ent){ return apFromLoad(ent.baseAP, ent.loadKg, ent.armorItem); }
+
+/* ------------------------------------------------------------------ *
+ *  Grid helpers — line of sight and pathfinding                       *
+ * ------------------------------------------------------------------ */
+const T = { FLOOR:0, WALL:1, LOWCOVER:2, DOOR:3, CONTAINER:4, EXTRACT:5, TREE:6, WATER:7 };
+const BLOCKS_SIGHT = t => t === T.WALL || t === T.TREE || t === T.CONTAINER;
+const BLOCKS_MOVE  = t => t === T.WALL || t === T.TREE || t === T.CONTAINER || t === T.LOWCOVER;
+
+function lineTiles(x0,y0,x1,y1){
+  const pts = [];
+  let dx = Math.abs(x1-x0), dy = Math.abs(y1-y0);
+  let sx = x0<x1?1:-1, sy = y0<y1?1:-1, err = dx-dy, x=x0, y=y0;
+  for(let guard=0; guard<600; guard++){
+    pts.push([x,y]);
+    if(x===x1 && y===y1) break;
+    const e2 = 2*err;
+    if(e2 > -dy){ err -= dy; x += sx; }
+    if(e2 <  dx){ err += dx; y += sy; }
+  }
+  return pts;
+}
+function hasLOS(map, x0,y0, x1,y1){
+  const pts = lineTiles(x0,y0,x1,y1);
+  for(let i=1;i<pts.length-1;i++){
+    const [x,y] = pts[i];
+    if(BLOCKS_SIGHT(map.at(x,y))) return false;
+  }
+  return true;
+}
+/* Standing next to low cover with the shooter on the other side of it. */
+function inCoverFrom(map, tx,ty, sx,sy){
+  const dx = Math.sign(sx-tx), dy = Math.sign(sy-ty);
+  if(!dx && !dy) return false;
+  if(map.at(tx+dx, ty+dy) === T.LOWCOVER) return true;
+  if(dx && dy){
+    if(map.at(tx+dx,ty)===T.LOWCOVER || map.at(tx,ty+dy)===T.LOWCOVER) return true;
+  }
+  return false;
+}
+function dist(a,b,c,d){ return Math.max(Math.abs(a-c), Math.abs(b-d)); }
+
+function findPath(map, sx,sy, tx,ty, blockedBy, maxNodes){
+  maxNodes = maxNodes || 4000;
+  const key = (x,y) => y*map.w + x;
+  const open = [{x:sx,y:sy,g:0,f:dist(sx,sy,tx,ty),p:null}];
+  const seen = new Map([[key(sx,sy), 0]]);
+  let nodes = 0;
+  while(open.length && nodes++ < maxNodes){
+    let bi = 0;
+    for(let i=1;i<open.length;i++) if(open[i].f < open[bi].f) bi = i;
+    const cur = open.splice(bi,1)[0];
+    if(cur.x===tx && cur.y===ty){
+      const path = []; let n = cur;
+      while(n.p){ path.unshift([n.x,n.y]); n = n.p; }
+      return path;
+    }
+    for(let dy=-1;dy<=1;dy++) for(let dx=-1;dx<=1;dx++){
+      if(!dx && !dy) continue;
+      const nx = cur.x+dx, ny = cur.y+dy;
+      if(nx<0||ny<0||nx>=map.w||ny>=map.h) continue;
+      const t = map.at(nx,ny);
+      if(BLOCKS_MOVE(t) && !(nx===tx&&ny===ty)) continue;
+      if(dx && dy && (BLOCKS_MOVE(map.at(cur.x+dx,cur.y)) || BLOCKS_MOVE(map.at(cur.x,cur.y+dy)))) continue;
+      if(blockedBy && blockedBy(nx,ny) && !(nx===tx&&ny===ty)) continue;
+      const g = cur.g + 1;
+      const k = key(nx,ny);
+      if(seen.has(k) && seen.get(k) <= g) continue;
+      seen.set(k,g);
+      open.push({ x:nx, y:ny, g, f:g + dist(nx,ny,tx,ty), p:cur });
+    }
+  }
+  return null;
+}
+/* Full field of view for the player: cast a ray at every cell in radius. */
+function computeFOV(map, ox, oy, radius, visible){
+  visible.clear();
+  visible.add(oy*map.w+ox);
+  for(let y = Math.max(0,oy-radius); y <= Math.min(map.h-1, oy+radius); y++){
+    for(let x = Math.max(0,ox-radius); x <= Math.min(map.w-1, ox+radius); x++){
+      if(dist(ox,oy,x,y) > radius) continue;
+      const pts = lineTiles(ox,oy,x,y);
+      for(let i=1;i<pts.length;i++){
+        const [px,py] = pts[i];
+        visible.add(py*map.w+px);
+        if(BLOCKS_SIGHT(map.at(px,py))) break;
+      }
+    }
+  }
+}
+/* ==========================================================================
+   SECTION 3 — GAME STATE, MAP GENERATION, RAID LOOP, AI
+   ========================================================================== */
+
+const SAVE_KEY = 'exfil_save_v1';
+let G = null;      // persistent player state
+let raid = null;   // live raid, null between raids
+
+/* ------------------------------------------------------------------ *
+ *  Persistent state                                                   *
+ * ------------------------------------------------------------------ */
+let uidCounter = 1;
+const uid = () => 'i' + (uidCounter++) + '_' + (Math.random()*1e6|0);
+
+function newSave(){
+  const s = {
+    rub: 250000, xp: 0, level: 1,
+    stash: [], guns: [], loadout: null,
+    quests: {}, spend: {}, done: {},
+    raids: { run:0, survived:0, kills:0 },
+    ver: 1,
+  };
+  QUESTS.forEach(q => s.quests[q.id] = { prog:0, done:false });
+
+  // Starting kit: a beaten-up AKM, a rifle's worth of ammunition, basic meds.
+  const akm = newGun('akm', 'AKM');
+  akm.ammo = '762_ps';
+  s.guns.push(akm);
+  const add = (id, n, dur) => stashAdd(s, id, n, dur);
+  add('762_ps', 90); add('762_hp', 60);
+  add('ak_mag_30', 2);
+  add('m_bandage', 2); add('m_splint', 1); add('m_ai2', 2);
+  add('r_scav', 1);
+  add('a_paca', 1, ITEMS['a_paca'].dur);
+  add('h_ssh', 1, ITEMS['h_ssh'].dur);
+  return s;
+}
+
+/* Armour carries per-item durability, so it never stacks. Everything else does. */
+function stashAdd(save, id, n, dur){
+  const it = ITEMS[id];
+  if(!it) return;
+  n = n || 1;
+  const perInstance = (dur !== undefined) || it.type==='armor' || it.type==='helmet' || (it.type==='rig' && it.cls>0);
+  if(perInstance){
+    for(let i=0;i<n;i++) save.stash.push({ uid:uid(), id, n:1, dur: dur !== undefined ? dur : (it.dur||0) });
+    return;
+  }
+  const ex = save.stash.find(e => e.id === id && e.dur === undefined);
+  if(ex) ex.n += n; else save.stash.push({ uid:uid(), id, n });
+}
+function stashCount(save, id){
+  return save.stash.filter(e=>e.id===id).reduce((a,e)=>a+e.n,0);
+}
+function stashRemove(save, id, n){
+  n = n || 1;
+  for(let i = save.stash.length-1; i >= 0 && n > 0; i--){
+    const e = save.stash[i];
+    if(e.id !== id) continue;
+    const take = Math.min(e.n, n);
+    e.n -= take; n -= take;
+    if(e.n <= 0) save.stash.splice(i,1);
+  }
+  return n === 0;
+}
+function stashRemoveUid(save, u){
+  const i = save.stash.findIndex(e=>e.uid===u);
+  if(i >= 0) return save.stash.splice(i,1)[0];
+  return null;
+}
+function findStash(save, u){ return save.stash.find(e=>e.uid===u); }
+
+function xpForLevel(n){ return Math.round(900 * Math.pow(n, 1.55)); }
+function levelFromXp(xp){
+  let lv = 1, need = xpForLevel(1), acc = 0;
+  while(acc + need <= xp && lv < 60){ acc += need; lv++; need = xpForLevel(lv); }
+  return { level:lv, into:xp-acc, need };
+}
+function refreshLevel(){
+  const l = levelFromXp(G.xp);
+  G.level = l.level;
+  return l;
+}
+function traderLoyalty(tid){
+  const spend = G.spend[tid] || 0;
+  const REQ_SPEND = [0, 0, 120000, 450000, 1100000];
+  const REQ_LVL   = [0, 1, 6, 12, 20];
+  let lv = 1;
+  for(let i = 2; i <= 4; i++) if(spend >= REQ_SPEND[i] && G.level >= REQ_LVL[i]) lv = i;
+  return lv;
+}
+function save(){
+  try { localStorage.setItem(SAVE_KEY, JSON.stringify(G)); } catch(e){}
+}
+function load(){
+  try {
+    const raw = localStorage.getItem(SAVE_KEY);
+    if(raw){
+      const s = JSON.parse(raw);
+      if(s && s.ver === 1){
+        QUESTS.forEach(q => { if(!s.quests[q.id]) s.quests[q.id] = { prog:0, done:false }; });
+        return s;
+      }
+    }
+  } catch(e){}
+  return newSave();
+}
+
+/* ------------------------------------------------------------------ *
+ *  Map generation                                                     *
+ * ------------------------------------------------------------------ */
+function makeMap(w, h){
+  const t = new Uint8Array(w*h);
+  return {
+    w, h, t,
+    at(x,y){ return (x<0||y<0||x>=w||y>=h) ? T.WALL : t[y*w+x]; },
+    set(x,y,v){ if(x>=0&&y>=0&&x<w&&y<h) t[y*w+x] = v; },
+  };
+}
+function carveRoom(map, R, x, y, rw, rh, doors){
+  for(let j=y;j<y+rh;j++) for(let i=x;i<x+rw;i++){
+    const edge = (i===x||j===y||i===x+rw-1||j===y+rh-1);
+    map.set(i, j, edge ? T.WALL : T.FLOOR);
+  }
+  for(let d=0; d<(doors||2); d++){
+    const side = R.int(0,3);
+    if(side===0) map.set(R.int(x+1,x+rw-2), y, T.DOOR);
+    if(side===1) map.set(R.int(x+1,x+rw-2), y+rh-1, T.DOOR);
+    if(side===2) map.set(x, R.int(y+1,y+rh-2), T.DOOR);
+    if(side===3) map.set(x+rw-1, R.int(y+1,y+rh-2), T.DOOR);
+  }
+}
+function generateMap(def, R){
+  const map = makeMap(def.w, def.h);
+  const { w, h } = def;
+  for(let y=0;y<h;y++) for(let x=0;x<w;x++)
+    map.set(x, y, (x===0||y===0||x===w-1||y===h-1) ? T.WALL : T.FLOOR);
+
+  const rooms = [];
+  const tryRooms = def.style==='forest' ? 5 : def.style==='lab' ? 16 : def.style==='industrial' ? 12 : 14;
+  for(let a=0; a<tryRooms*6 && rooms.length<tryRooms; a++){
+    const rw = R.int(5, def.style==='lab'?9:13), rh = R.int(5, def.style==='lab'?8:11);
+    const x = R.int(2, w-rw-2), y = R.int(2, h-rh-2);
+    if(rooms.some(r => x < r.x+r.w+1 && x+rw+1 > r.x && y < r.y+r.h+1 && y+rh+1 > r.y)) continue;
+    carveRoom(map, R, x, y, rw, rh, def.style==='lab'?2:R.int(2,3));
+    rooms.push({ x, y, w:rw, h:rh });
+  }
+
+  // corridors between adjacent rooms keep the interiors connected
+  if(def.style==='lab' || def.style==='industrial'){
+    for(let i=1;i<rooms.length;i++){
+      const a = rooms[i-1], b = rooms[i];
+      const ax = a.x+(a.w>>1), ay = a.y+(a.h>>1), bx = b.x+(b.w>>1), by = b.y+(b.h>>1);
+      for(let x=Math.min(ax,bx); x<=Math.max(ax,bx); x++) if(map.at(x,ay)===T.WALL) map.set(x,ay,T.DOOR);
+      for(let y=Math.min(ay,by); y<=Math.max(ay,by); y++) if(map.at(bx,y)===T.WALL) map.set(bx,y,T.DOOR);
+    }
+  }
+
+  // scenery: trees in the woods, crates and barriers everywhere else
+  if(def.style==='forest'){
+    for(let c=0;c<26;c++){
+      const cx = R.int(3,w-4), cy = R.int(3,h-4), n = R.int(4,11);
+      for(let i=0;i<n;i++){
+        const x = clamp(cx+R.int(-3,3),1,w-2), y = clamp(cy+R.int(-3,3),1,h-2);
+        if(map.at(x,y)===T.FLOOR) map.set(x,y, R.chance(0.65)?T.TREE:T.LOWCOVER);
+      }
+    }
+    for(let c=0;c<6;c++){
+      const cx = R.int(4,w-6), cy = R.int(4,h-6), n = R.int(5,12);
+      for(let i=0;i<n;i++){
+        const x = clamp(cx+R.int(-4,4),1,w-2), y = clamp(cy+R.int(-3,3),1,h-2);
+        if(map.at(x,y)===T.FLOOR) map.set(x,y,T.WATER);
+      }
+    }
+  }
+  const coverCount = def.style==='industrial' ? 110 : def.style==='lab' ? 90 : def.style==='town' ? 120 : 60;
+  for(let i=0;i<coverCount;i++){
+    const x = R.int(1,w-2), y = R.int(1,h-2);
+    if(map.at(x,y)===T.FLOOR) map.set(x,y,T.LOWCOVER);
+  }
+
+  // guarantee the map is walkable from a seed point; anything unreachable
+  // gets cleared rather than shipped as a sealed pocket
+  const openCells = [];
+  for(let y=1;y<h-1;y++) for(let x=1;x<w-1;x++) if(!BLOCKS_MOVE(map.at(x,y))) openCells.push([x,y]);
+  const start = openCells[0];
+  const reach = new Set(); const stack = [start];
+  reach.add(start[1]*w+start[0]);
+  while(stack.length){
+    const [x,y] = stack.pop();
+    for(let dy=-1;dy<=1;dy++) for(let dx=-1;dx<=1;dx++){
+      const nx=x+dx, ny=y+dy, k=ny*w+nx;
+      if(nx<1||ny<1||nx>=w-1||ny>=h-1||reach.has(k)) continue;
+      if(BLOCKS_MOVE(map.at(nx,ny))) continue;
+      reach.add(k); stack.push([nx,ny]);
+    }
+  }
+  for(const [x,y] of openCells) if(!reach.has(y*w+x)) map.set(x,y,T.FLOOR);
+
+  const free = [];
+  for(let y=1;y<h-1;y++) for(let x=1;x<w-1;x++) if(map.at(x,y)===T.FLOOR) free.push([x,y]);
+  return { map, rooms, free };
+}
+
+/* ------------------------------------------------------------------ *
+ *  Entities                                                           *
+ * ------------------------------------------------------------------ */
+function makeEntity(o){
+  return Object.assign({
+    x:0, y:0, stance:'stand', alive:true, side:'ai',
+    body:newBody(1), effects:{ bleeds:[], frac:{}, pain:0, painkiller:0 },
+    ap:0, baseAP:8, magLoaded:0, spareMags:0, accBonus:0,
+    armor:null, helmet:null, rig:null, loadKg:0,
+    inCover:false, moved:false, state:'patrol', lastKnown:null, alert:false,
+  }, o);
+}
+function totalHP(e){ let a=0; for(const l of LIMBS) a += e.body[l].hp; return a; }
+function totalMaxHP(e){ let a=0; for(const l of LIMBS) a += e.body[l].max; return a; }
+
+/* The player is one operator against many, so they act more often than any
+   single hostile does. This is the game's core asymmetry — keep it in one place. */
+function playerBaseAP(){ return 12 + Math.floor(G.level/6); }
+
+function buildPlayerEntity(lo){
+  const gun = lo.gunObj ? resolveWeapon(lo.gunObj) : null;
+  const e = makeEntity({
+    side:'player', name:'You', gun,
+    baseAP: playerBaseAP(),
+    magLoaded: gun ? gun.mag : 0,
+    spareMags: lo.mags || 0,
+    meds: (lo.meds||[]).map(id => ({ id, pool: ITEMS[id].pool })),
+  });
+  if(lo.armor)  { const s = findStash(G, lo.armor);  if(s) e.armor  = { id:s.id, dur:s.dur, uid:s.uid }; }
+  if(lo.helmet) { const s = findStash(G, lo.helmet); if(s) e.helmet = { id:s.id, dur:s.dur, uid:s.uid }; }
+  if(lo.rig)    { const s = findStash(G, lo.rig);    if(s) e.rig    = { id:s.id, dur:s.dur||0, uid:s.uid }; }
+  e.armorItem = e.armor ? e.armor.id : null;
+  e.loadKg = totalWeight({ gun, armor:e.armor&&e.armor.id, helmet:e.helmet&&e.helmet.id,
+                           rig:e.rig&&e.rig.id, spareMags:e.spareMags, meds:lo.meds||[] });
+  // heavy armour and a heavy gun cost ergonomics, and ergonomics is action points
+  let ergoPen = 0;
+  for(const s of ['armor','helmet','rig']) if(e[s]) ergoPen += (ITEMS[e[s].id].ergo || 0);
+  e.ergoPen = ergoPen;
+  if(gun && ergoPen){
+    gun.ergo = clamp(gun.ergo + ergoPen, 5, 120);
+    gun.apShot   = clamp(Math.round(4.6 - (gun.ergo-40)/26), 2, 6);
+    gun.apReload = clamp(Math.round(4.6 - (gun.ergo-40)/28), 2, 6);
+  }
+  e.maxAp = maxAPFor(e);
+  e.ap = e.maxAp;
+  return e;
+}
+
+function spawnEnemy(R, type, x, y, mapDef){
+  const t = ENEMY_TYPES[type];
+  const kit = AI_KITS[Math.min(t.tier, AI_KITS.length-1)];
+  const [platId, ammoId] = R.pick(kit.guns);
+  const g = newGun(platId);
+  g.ammo = ammoId;
+  // better AI carries better-configured weapons
+  if(t.tier >= 2){
+    const opts = MODS.filter(m => m.slot==='optic' && canInstall(g,m).ok);
+    if(opts.length && R.chance(0.7)) g.mods.optic = R.pick(opts).id;
+    const fg = MODS.filter(m => m.slot==='foregrip' && canInstall(g,m).ok);
+    if(fg.length && R.chance(0.5)) g.mods.foregrip = R.pick(fg).id;
+  }
+  if(type === 'marksman'){
+    const mnt = MODS.filter(m => m.slot==='mount' && canInstall(g,m).ok);
+    if(mnt.length) g.mods.mount = mnt[0].id;
+    const sc = MODS.filter(m => m.slot==='optic' && m.zoom>=4 && canInstall(g,m).ok);
+    if(sc.length) g.mods.optic = R.pick(sc).id;
+  }
+  const gun = resolveWeapon(g);
+  const armorId = R.pick(kit.armor), helmId = R.pick(kit.helm);
+  const e = makeEntity({
+    side:'ai', type, name:t.name, tmpl:t, gunObj:g, gun, x, y,
+    body:newBody(t.hpMult), baseAP:t.ap, sight:t.sight,
+    magLoaded:gun.mag, spareMags:R.int(1,3), accBonus:t.acc,
+    armor: armorId ? { id:armorId, dur:ITEMS[armorId].dur } : null,
+    helmet: helmId ? { id:helmId, dur:ITEMS[helmId].dur } : null,
+    xp:t.xp,
+    dropLoot:R.int(kit.loot[0], kit.loot[1]),
+  });
+  e.armorItem = armorId;
+  e.loadKg = totalWeight({ gun, armor:armorId, helmet:helmId, spareMags:e.spareMags });
+  e.maxAp = maxAPFor(e);
+  if(t.tier === 0) e.stance = R.chance(0.25) ? 'crouch' : 'stand';
+  return e;
+}
+
+/* ------------------------------------------------------------------ *
+ *  Raid setup                                                         *
+ * ------------------------------------------------------------------ */
+function startRaid(mapId, lo){
+  const def = MAPS.find(m=>m.id===mapId);
+  const seed = (Math.random()*4294967295)>>>0;
+  const R = RNG(seed);
+  const { map, rooms, free } = generateMap(def, R);
+  R.shuffle(free);
+
+  const player = buildPlayerEntity(lo);
+  const spawn = free.pop();
+  player.x = spawn[0]; player.y = spawn[1];
+
+  // extracts sit far from the insertion point, so leaving means crossing the map
+  const extracts = [];
+  const candidates = free.filter(([x,y]) => dist(x,y,player.x,player.y) > Math.min(def.w,def.h)*0.55);
+  R.shuffle(candidates);
+  for(let i=0;i<def.extracts && i<candidates.length;i++){
+    const [x,y] = candidates[i];
+    const needsKey = (i === def.extracts-1) && def.keyExtract;
+    extracts.push({ x, y, name: needsKey ? 'LOCKED EXFIL' : 'EXFIL '+String.fromCharCode(65+i),
+                    key: needsKey ? def.keyExtract : null });
+    map.set(x,y,T.EXTRACT);
+    for(const [dx,dy] of [[1,0],[0,1],[-1,0],[0,-1]]) if(map.at(x+dx,y+dy)===T.FLOOR) map.set(x+dx,y+dy,T.EXTRACT);
+  }
+
+  // containers
+  const containers = [];
+  const nCont = R.int(def.containers[0], def.containers[1]);
+  for(let i=0;i<nCont && free.length;i++){
+    const [x,y] = free.pop();
+    if(dist(x,y,player.x,player.y) < 4){ i--; continue; }
+    map.set(x,y,T.CONTAINER);
+    containers.push({ x, y, opened:false, items:rollContainer(R, def) });
+  }
+
+  // hostiles
+  const ents = [player];
+  const nEn = R.int(def.enemies[0], def.enemies[1]);
+  for(let i=0;i<nEn && free.length;i++){
+    const [x,y] = free.pop();
+    // nobody starts the raid already looking at you
+    if(dist(x,y,player.x,player.y) < 17 || hasLOS(map, x,y, player.x,player.y)){ i--; continue; }
+    let type = 'scav';
+    if(R.chance(def.raiderChance)) type = 'raider';
+    else if(R.chance(0.18)) type = 'marksman';
+    ents.push(spawnEnemy(R, type, x, y, def));
+  }
+  if(R.chance(def.bossChance) && free.length > 4){
+    const [bx,by] = free.pop();
+    ents.push(spawnEnemy(R,'boss',bx,by,def));
+    for(let i=0;i<2 && free.length;i++){
+      const [gx,gy] = free.pop();
+      ents.push(spawnEnemy(R,'guard',gx,gy,def));
+    }
+  }
+
+  raid = {
+    def, map, R, seed, ents, player, extracts, containers,
+    turn:1, over:false, result:null, log:[],
+    visible:new Set(), explored:new Set(),
+    mode: player.gun ? player.gun.modes[0] : 'single',
+    aimAP:0, bag:[], kills:[], target:null, hoverTile:null,
+    camX:player.x, camY:player.y, extractProgress:null,
+    startKit:{ gunUid: lo.gun, armor:lo.armor, helmet:lo.helmet, rig:lo.rig,
+               meds:(lo.meds||[]).slice(), mags:lo.mags||0, ammoId: lo.gunObj ? lo.gunObj.ammo : null },
+  };
+  updateFOV();
+  rlog('Inserted into '+def.name+'. '+nEn+' hostile contacts expected.', 'sys');
+  rlog('Reach an extraction point to keep what you are carrying.', 'sys');
+  return raid;
+}
+
+function rollContainer(R, def){
+  const out = [];
+  const n = R.int(1,3);
+  for(let i=0;i<n;i++){
+    const roll = R.next();
+    if(roll < 0.34){
+      const pool = LOOT.map(l => [l.id, Math.max(0.4, (8 - l.rar) * (l.rar>=4 ? def.lootBias : 1))]);
+      out.push({ id:R.weighted(pool), n:1 });
+    } else if(roll < 0.58){
+      const a = R.pick(AMMO.filter(x => x.price < 400*def.lootBias));
+      out.push({ id:a.id, n:R.int(8,34) });
+    } else if(roll < 0.74){
+      const m = R.pick(MEDS.filter(x => x.price < 24000*def.lootBias));
+      out.push({ id:m.id, n:1 });
+    } else if(roll < 0.90){
+      const pool = MODS.filter(x => x.price < 30000*def.lootBias);
+      out.push({ id:R.pick(pool).id, n:1 });
+    } else {
+      const pool = ARMOR.filter(x => x.price < 70000*def.lootBias);
+      const it = R.pick(pool);
+      out.push({ id:it.id, n:1, dur:Math.round(it.dur * (0.35 + R.next()*0.5)) });
+    }
+  }
+  if(def.keyExtract && R.chance(0.10)) out.push({ id:'k_'+({car:'dorm',gate:'gate',bunker:'bunker'})[def.keyExtract], n:1 });
+  return out;
+}
+
+function rlog(msg, cls){
+  raid.log.push({ msg, cls:cls||'' });
+  if(raid.log.length > 260) raid.log.shift();
+}
+function updateFOV(){
+  const p = raid.player;
+  const radius = p.gun ? clamp(Math.round(p.gun.sight/METERS_PER_TILE) + 6, 14, 34) : 16;
+  computeFOV(raid.map, p.x, p.y, radius, raid.visible);
+  for(const k of raid.visible) raid.explored.add(k);
+}
+function entAt(x,y){ return raid.ents.find(e=>e.alive && e.x===x && e.y===y); }
+function occupied(x,y){ return !!entAt(x,y); }
+
+/* Everything within earshot of a shot starts hunting for you. */
+function makeNoise(x, y, radius, source){
+  for(const e of raid.ents){
+    if(!e.alive || e === source || e.side === 'player') continue;
+    if(dist(e.x,e.y,x,y) * METERS_PER_TILE <= radius){
+      e.alert = true;
+      e.lastKnown = { x, y };
+      if(e.state === 'patrol') e.state = 'investigate';
+    }
+  }
+}
+
+/* ------------------------------------------------------------------ *
+ *  Player actions                                                     *
+ * ------------------------------------------------------------------ */
+function playerMoveTo(tx, ty){
+  const p = raid.player;
+  if(raid.over) return;
+  const path = findPath(raid.map, p.x, p.y, tx, ty, (x,y)=>occupied(x,y) && !(x===p.x&&y===p.y), 6000);
+  if(!path || !path.length){ rlog('No route there.', 'sys'); return; }
+  for(const [x,y] of path){
+    const cost = moveCost(p);
+    if(p.ap < cost){ rlog('Out of action points.', 'sys'); break; }
+    p.ap -= cost; p.x = x; p.y = y; p.moved = true;
+    updateFOV();
+    // stop the moment something hostile comes into view
+    const spotted = raid.ents.find(e => e.alive && e.side==='ai' && raid.visible.has(e.y*raid.map.w+e.x));
+    if(spotted && !raid._seen){ rlog('Contact — '+spotted.name+' spotted.', 'warn'); raid._seen = true; break; }
+    if(raid.map.at(x,y) === T.EXTRACT){ tryExtract(); return; }
+  }
+  raid._seen = false;
+  afterPlayerAction();
+}
+function playerShoot(target){
+  const p = raid.player;
+  if(!p.gun){ rlog('You are unarmed.', 'sys'); return; }
+  const fm = FIRE_MODES[raid.mode];
+  const cost = p.gun.apShot + fm.apAdd + (p.gun.boltAP||0) + raid.aimAP;
+  if(p.ap < cost){ rlog('Not enough action points ('+cost+' needed).', 'sys'); return; }
+  if(p.magLoaded <= 0){ rlog('Magazine empty — reload.', 'warn'); return; }
+  const d = dist(p.x,p.y,target.x,target.y);
+  if(!hasLOS(raid.map, p.x,p.y, target.x,target.y)){ rlog('No line of sight.', 'sys'); return; }
+
+  p.ap -= cost;
+  target.inCover = inCoverFrom(raid.map, target.x,target.y, p.x,p.y);
+  const rep = fireWeapon(raid.R, p, target, d, { mode:raid.mode, aimAP:raid.aimAP, log:rlog });
+  raid.aimAP = 0;
+
+  makeNoise(p.x, p.y, p.gun.noise, p);
+  describeShot(p, target, rep, d);
+  if(!target.alive) killEntity(target, p);
+  afterPlayerAction();
+}
+function describeShot(sh, tg, rep, d){
+  const who = sh.side==='player' ? 'You' : sh.name;
+  const at  = tg.side==='player' ? 'you' : tg.name;
+  if(!rep.rounds){ rlog(who+' — empty magazine.', 'warn'); return; }
+  if(!rep.hits){
+    rlog(who+' fired '+rep.rounds+' at '+at+' ('+Math.round(d*METERS_PER_TILE)+'m) — missed.', 'sys');
+    return;
+  }
+  const parts = {};
+  for(const l of rep.locations) parts[l] = (parts[l]||0)+1;
+  const where = Object.keys(parts).map(l => LIMB_NAME[l]+(parts[l]>1?'x'+parts[l]:'')).join(', ');
+  const cls = tg.side==='player' ? 'dmg' : 'hit';
+  let line = who+' hit '+at+' — '+where+' — '+Math.round(rep.dmg)+' dmg';
+  if(rep.blocked) line += ' ('+rep.blocked+' stopped by armour)';
+  rlog(line, cls);
+  if(rep.headshot && rep.pen) rlog('Round defeated the helmet.', 'warn');
+  if(rep.armorBroke) rlog((tg.side==='player'?'Your':at+"'s")+' armour has failed.', 'warn');
+}
+function playerReload(){
+  const p = raid.player;
+  if(!p.gun) return;
+  if(p.spareMags <= 0){ rlog('No spare magazines.', 'warn'); return; }
+  const cost = p.gun.apReload + ((p.body.larm.hp<=0||p.body.rarm.hp<=0) ? 2 : 0);
+  if(p.ap < cost){ rlog('Not enough action points to reload.', 'sys'); return; }
+  p.ap -= cost; p.spareMags--; p.magLoaded = p.gun.mag;
+  rlog('Reloaded — '+p.magLoaded+' rounds, '+p.spareMags+' magazines left.', 'good');
+  makeNoise(p.x, p.y, 12, p);
+  afterPlayerAction();
+}
+function playerStance(st){
+  const p = raid.player;
+  if(p.stance === st) return;
+  if(p.ap < 1){ rlog('Not enough action points.', 'sys'); return; }
+  p.ap -= 1; p.stance = st;
+  rlog('Stance: '+st+'.', 'sys');
+  afterPlayerAction();
+}
+function playerUseMed(idx){
+  const p = raid.player;
+  const med = p.meds[idx];
+  if(!med) return;
+  const it = ITEMS[med.id];
+  if(p.ap < it.ap){ rlog('Not enough action points.', 'sys'); return; }
+
+  let did = false;
+  if(it.cures.includes('pain')){
+    p.effects.painkiller = 6; p.effects.pain = 0; did = true;
+    rlog('Painkillers — limb penalties suppressed for 6 turns.', 'good');
+  }
+  for(const c of it.cures){
+    if(c === 'frac' && Object.keys(p.effects.frac).length){ p.effects.frac = {}; did = true; rlog('Fracture splinted.', 'good'); }
+    if((c === 'light' || c === 'heavy')){
+      const before = p.effects.bleeds.length;
+      p.effects.bleeds = p.effects.bleeds.filter(b => b.kind !== c);
+      if(p.effects.bleeds.length < before){ did = true; rlog(c==='heavy'?'Heavy bleeding stopped.':'Bleeding bandaged.', 'good'); }
+    }
+  }
+  if(med.pool > 0){
+    // heal the worst-off limb first, never past its maximum
+    let healed = 0;
+    for(let pass=0; pass<7 && med.pool > 0; pass++){
+      const order = LIMBS.filter(l=>p.body[l].hp < p.body[l].max)
+                         .sort((a,b)=>(p.body[a].hp/p.body[a].max)-(p.body[b].hp/p.body[b].max));
+      if(!order.length) break;
+      const l = order[0];
+      const want = Math.min(med.pool, p.body[l].max - p.body[l].hp, 40);
+      p.body[l].hp += want; med.pool -= want; healed += want;
+    }
+    if(healed){ did = true; rlog('Healed '+Math.round(healed)+' hp ('+Math.round(med.pool)+' left in kit).', 'good'); }
+  }
+  if(!did){ rlog('Nothing for that kit to do.', 'sys'); return; }
+  p.ap -= it.ap;
+  if(med.pool <= 0 && it.pool > 0) p.meds.splice(idx,1);
+  else if(it.pool === 0) p.meds.splice(idx,1);
+  afterPlayerAction();
+}
+function playerLoot(c){
+  const p = raid.player;
+  if(c.opened) return;
+  if(p.ap < 2){ rlog('Not enough action points.', 'sys'); return; }
+  p.ap -= 2; c.opened = true;
+  if(!c.items.length){ rlog('Container is empty.', 'sys'); }
+  for(const it of c.items){
+    raid.bag.push(it);
+    rlog('Found '+(it.n>1?it.n+'x ':'')+ITEMS[it.id].name+'.', 'big');
+  }
+  makeNoise(p.x, p.y, 8, p);
+  afterPlayerAction();
+}
+function tryExtract(){
+  const p = raid.player;
+  const ex = raid.extracts.find(e => dist(e.x,e.y,p.x,p.y) <= 1);
+  if(!ex) return;
+  if(ex.key){
+    const hasKey = raid.bag.some(b => ITEMS[b.id].opens === ex.key) || stashCount(G, 'k_'+({car:'dorm',gate:'gate',bunker:'bunker'})[ex.key]) > 0;
+    if(!hasKey){ rlog('This exit is locked. You need the right key.', 'warn'); return; }
+  }
+  endRaid('extracted');
+}
+function afterPlayerAction(){
+  if(!raid || raid.over) return;
+  raid.player.inCover = false;
+  if(!raid.player.alive){ endRaid('killed'); return; }
+  updateFOV();
+  render();
+  if(raid.player.ap <= 0) setTimeout(endPlayerTurn, 120);
+}
+
+/* ------------------------------------------------------------------ *
+ *  Turn cycle                                                         *
+ * ------------------------------------------------------------------ */
+function endPlayerTurn(){
+  if(!raid || raid.over) return;
+  const p = raid.player;
+  tickEffects(p, rlog);
+  if(p.effects.painkiller > 0) p.effects.painkiller--;
+  if(!p.alive){ endRaid('killed'); return; }
+
+  for(const e of raid.ents){
+    if(!e.alive || e.side === 'player') continue;
+    tickEffects(e, null);
+    if(!e.alive){ killEntity(e, null); continue; }
+    aiTurn(e);
+    if(raid.over) return;
+  }
+  raid.turn++;
+  p.moved = false;
+  p.ap = maxAPFor(p);
+  p.maxAp = p.ap;
+  raid.aimAP = 0;
+  updateFOV();
+  if(!p.alive){ endRaid('killed'); return; }
+  render();
+}
+
+function killEntity(e, by){
+  e.alive = false;
+  if(e.side === 'player') return;
+  rlog(e.name+' is down.', 'good');
+  raid.kills.push({ type:e.type, name:e.name, armored: e.armor ? ITEMS[e.armor.id].cls : 0,
+                    suppressed: by && by.gun ? by.gun.suppressed : false });
+  // the body becomes a lootable container where it fell
+  const drop = [];
+  const R = raid.R;
+  for(let i=0;i<(e.dropLoot||0);i++){
+    const pool = LOOT.map(l => [l.id, Math.max(0.3, 7 - l.rar)]);
+    drop.push({ id:R.weighted(pool), n:1 });
+  }
+  if(e.gunObj && R.chance(0.55)) drop.push({ id:e.gunObj.plat, n:1, gun:e.gunObj });
+  if(e.armor && e.armor.dur > 4 && R.chance(0.5)) drop.push({ id:e.armor.id, n:1, dur:Math.round(e.armor.dur) });
+  if(e.helmet && e.helmet.dur > 4 && R.chance(0.5)) drop.push({ id:e.helmet.id, n:1, dur:Math.round(e.helmet.dur) });
+  if(e.gun) drop.push({ id:e.gun.ammo, n:R.int(5,26) });
+  if(drop.length){
+    raid.containers.push({ x:e.x, y:e.y, opened:false, items:drop, body:true });
+    if(raid.map.at(e.x,e.y) === T.FLOOR) raid.map.set(e.x,e.y,T.CONTAINER);
+  }
+}
+
+/* ------------------------------------------------------------------ *
+ *  AI                                                                 *
+ * ------------------------------------------------------------------ */
+function aiTurn(e){
+  e.ap = maxAPFor(e);
+  e.moved = false;
+  const p = raid.player;
+  const map = raid.map;
+  let guard = 0;
+
+  if(e.searchTurns > 0) e.searchTurns--;
+
+  while(e.ap > 0 && guard++ < 40 && e.alive && p.alive && !raid.over){
+    // staying low makes you harder to pick out
+    const stealth = p.stance === 'prone' ? 0.55 : p.stance === 'crouch' ? 0.78 : 1;
+    const d = dist(e.x,e.y,p.x,p.y);
+    const canSee = d <= e.sight * stealth && hasLOS(map, e.x,e.y, p.x,p.y);
+
+    // lost sight of the target — go looking, then give up
+    if(!canSee && e.state === 'engage'){
+      e.state = 'investigate';
+      e.searchTurns = 4;
+    }
+    if(e.state === 'investigate' && e.searchTurns <= 0 && !canSee){
+      e.state = 'patrol'; e.lastKnown = null; e.alert = false; e.acquired = false;
+    }
+
+    if(canSee){
+      e.state = 'engage'; e.alert = true; e.lastKnown = { x:p.x, y:p.y };
+      // reaction time: the turn a hostile first acquires you is spent getting
+      // into position, not shooting. This is the window you get to break contact.
+      if(!e.acquired){
+        e.acquired = true;
+        if(raid.visible.has(e.y*map.w+e.x)) rlog(e.name+' has spotted you.', 'warn');
+        const spot = aiFindCover(e, p);
+        if(spot) aiStep(e, spot[0], spot[1]);
+        break;
+      }
+    }
+
+    const hpFrac = totalHP(e)/totalMaxHP(e);
+    if(hpFrac < e.tmpl.flee && e.state !== 'flee'){
+      e.state = 'flee';
+      if(raid.visible.has(e.y*map.w+e.x)) rlog(e.name+' is breaking contact.', 'sys');
+    }
+
+    if(e.state === 'flee'){
+      const dx = Math.sign(e.x-p.x) || (raid.R.chance(0.5)?1:-1);
+      const dy = Math.sign(e.y-p.y) || (raid.R.chance(0.5)?1:-1);
+      if(!aiStep(e, e.x+dx*3, e.y+dy*3)) break;
+      continue;
+    }
+
+    if(e.state === 'engage' && canSee){
+      if(e.magLoaded <= 0){
+        if(e.spareMags > 0 && e.ap >= e.gun.apReload){ e.ap -= e.gun.apReload; e.spareMags--; e.magLoaded = e.gun.mag; continue; }
+        e.state = 'flee'; continue;
+      }
+      // close the distance if the target is beyond what the sights can do
+      const metres = d * METERS_PER_TILE;
+      if(metres > e.gun.sight * 1.15 && e.ap > 3){
+        if(!aiStep(e, p.x, p.y)) { /* fall through to shooting */ } else continue;
+      }
+      // take cover before firing if there is any adjacent
+      if(!e.tookCover && e.ap >= 3 && raid.R.chance(e.tmpl.tier >= 2 ? 0.5 : 0.2)){
+        const spot = aiFindCover(e, p);
+        if(spot){ e.tookCover = true; if(aiStep(e, spot[0], spot[1])) continue; }
+      }
+      // don't waste a magazine on a shot that cannot land — close instead
+      if(hitChance(e, p, d, 0, 0) < 0.08){
+        if(e.ap > 3 && aiStep(e, p.x, p.y)) continue;
+        break;
+      }
+      const mode = e.gun.modes.includes('auto') && d < 5 ? 'auto'
+                 : e.gun.modes.includes('burst') && d < 10 ? 'burst' : 'single';
+      const fm = FIRE_MODES[mode];
+      const aim = clamp(e.ap - (e.gun.apShot + fm.apAdd + (e.gun.boltAP||0)), 0, 2);
+      const cost = e.gun.apShot + fm.apAdd + (e.gun.boltAP||0) + aim;
+      if(e.ap < cost) break;
+      e.ap -= cost;
+      if(e.stance === 'stand' && raid.R.chance(0.3)) e.stance = 'crouch';
+      p.inCover = inCoverFrom(map, p.x,p.y, e.x,e.y);
+      const rep = fireWeapon(raid.R, e, p, d, { mode, aimAP:aim, log:rlog });
+      makeNoise(e.x, e.y, e.gun.noise, e);
+      describeShot(e, p, rep, d);
+      if(!p.alive){ endRaid('killed'); return; }
+      continue;
+    }
+
+    if(e.state === 'investigate' && e.lastKnown){
+      if(dist(e.x,e.y,e.lastKnown.x,e.lastKnown.y) <= 1){
+        e.state = 'patrol'; e.lastKnown = null; e.alert = false; e.acquired = false;
+        continue;
+      }
+      if(!aiStep(e, e.lastKnown.x, e.lastKnown.y)) break;
+      continue;
+    }
+
+    // patrol
+    if(!e.wp || dist(e.x,e.y,e.wp[0],e.wp[1]) <= 1 || e.wpFail > 3){
+      e.wp = [clamp(e.x + raid.R.int(-9,9), 1, map.w-2), clamp(e.y + raid.R.int(-9,9), 1, map.h-2)];
+      e.wpFail = 0;
+    }
+    if(!aiStep(e, e.wp[0], e.wp[1])){ e.wpFail = (e.wpFail||0)+1; break; }
+  }
+  e.tookCover = false;
+}
+/* One step of movement toward a goal. Returns false when it cannot move. */
+function aiStep(e, tx, ty){
+  const cost = moveCost(e);
+  if(e.ap < cost) return false;
+  const path = findPath(raid.map, e.x, e.y, clamp(tx,1,raid.map.w-2), clamp(ty,1,raid.map.h-2),
+                        (x,y) => occupied(x,y), 1400);
+  if(!path || !path.length) return false;
+  const [nx,ny] = path[0];
+  if(occupied(nx,ny)) return false;
+  e.ap -= cost; e.x = nx; e.y = ny; e.moved = true;
+  return true;
+}
+function aiFindCover(e, p){
+  let best = null, bestD = 99;
+  for(let dy=-3;dy<=3;dy++) for(let dx=-3;dx<=3;dx++){
+    const x = e.x+dx, y = e.y+dy;
+    if(BLOCKS_MOVE(raid.map.at(x,y)) || occupied(x,y)) continue;
+    if(!inCoverFrom(raid.map, x,y, p.x,p.y)) continue;
+    if(!hasLOS(raid.map, x,y, p.x,p.y)) continue;
+    const d = Math.abs(dx)+Math.abs(dy);
+    if(d < bestD){ bestD = d; best = [x,y]; }
+  }
+  return best;
+}
+
+/* ------------------------------------------------------------------ *
+ *  Ending a raid                                                      *
+ * ------------------------------------------------------------------ */
+function endRaid(result){
+  if(raid.over) return;
+  raid.over = true;
+  raid.result = result;
+  const survived = result === 'extracted';
+  const p = raid.player;
+
+  let xp = 0, rub = 0;
+  const gained = [];
+  G.raids.run++;
+
+  for(const k of raid.kills){ xp += (ENEMY_TYPES[k.type] || {xp:100}).xp; }
+  G.raids.kills += raid.kills.length;
+
+  if(survived){
+    G.raids.survived++;
+    xp += 500 + raid.bag.length * 40;
+    // everything in the bag comes home, and so does the kit you went in with
+    for(const b of raid.bag){
+      if(b.gun){ const g = Object.assign({}, b.gun, { uid:'g'+(Math.random()*1e9|0) }); G.guns.push(g); }
+      else stashAdd(G, b.id, b.n, b.dur);
+      gained.push(b);
+    }
+    const k = raid.startKit;
+    if(k.armor)  { const s = findStash(G,k.armor);  if(s && p.armor)  s.dur = Math.round(p.armor.dur); }
+    if(k.helmet) { const s = findStash(G,k.helmet); if(s && p.helmet) s.dur = Math.round(p.helmet.dur); }
+    // unspent rounds and unused kits go back
+    if(k.ammoId && p.gun) stashAdd(G, k.ammoId, p.magLoaded + p.spareMags*p.gun.mag);
+    for(const m of p.meds) if(m.pool > 0 || ITEMS[m.id].pool === 0) stashAdd(G, m.id, 1);
+  } else {
+    // you lose the gun, the armour, the magazines, the meds and the bag
+    const k = raid.startKit;
+    if(k.gunUid){ const i = G.guns.findIndex(g=>g.uid===k.gunUid); if(i>=0) G.guns.splice(i,1); }
+    if(k.armor)  stashRemoveUid(G, k.armor);
+    if(k.helmet) stashRemoveUid(G, k.helmet);
+    if(k.rig)    stashRemoveUid(G, k.rig);
+    xp = Math.round(xp * 0.5);
+  }
+
+  updateQuests(survived, gained);
+  G.xp += xp;
+  G.rub += rub;
+  refreshLevel();
+  G.loadout = null;
+  save();
+  showAfterAction(survived, xp, gained);
+}
+
+function updateQuests(survived, gained){
+  for(const q of QUESTS){
+    const st = G.quests[q.id];
+    if(st.done || traderLoyalty(q.trader) < q.unlock) continue;
+    if(q.type === 'kill'){
+      for(const k of raid.kills){
+        if(q.filter.type && k.type !== q.filter.type) continue;
+        if(q.filter.suppressed && !k.suppressed) continue;
+        if(q.filter.armored && k.armored < q.filter.armored) continue;
+        st.prog++;
+      }
+    } else if(q.type === 'extract_map' && survived && raid.def.id === q.filter.map){
+      st.prog++;
+    } else if(q.type === 'extract_item' && survived){
+      st.prog += gained.filter(g => ITEMS[g.id] && ITEMS[g.id].kind === q.filter.kind).length;
+    }
+    if(st.prog >= q.target && q.type !== 'build') st.prog = q.target;
+  }
+}
+/* Build tasks are checked in the workbench, not in a raid. */
+function checkBuildQuests(){
+  for(const q of QUESTS){
+    if(q.type !== 'build') continue;
+    const st = G.quests[q.id];
+    if(st.done || st.prog >= q.target) continue;
+    if(traderLoyalty(q.trader) < q.unlock) continue;
+    for(const g of G.guns){
+      const s = resolveWeapon(g);
+      if(q.filter.ergo && s.ergo >= q.filter.ergo) st.prog = q.target;
+      if(q.filter.rv && s.rv <= q.filter.rv) st.prog = q.target;
+    }
+  }
+}
+function claimQuest(q){
+  const st = G.quests[q.id];
+  if(st.done || st.prog < q.target) return;
+  st.done = true;
+  G.rub += q.rub;
+  G.xp += q.xp;
+  G.spend[q.trader] = (G.spend[q.trader] || 0) + Math.round(q.rub * 0.6);
+  refreshLevel();
+  save();
+}
+/* ==========================================================================
+   SECTION 4 — INTERFACE
+   ========================================================================== */
+
+const $ = id => document.getElementById(id);
+const esc = s => String(s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const money = n => Math.round(n).toLocaleString('en-US');
+let screenName = 'stash';
+let ui = { stashSel:null, stashFilter:'all', benchGun:null, benchSlot:null, trader:'prapor' };
+
+function switchScreen(n){
+  if(raid && !raid.over && n !== 'raid') return;
+  screenName = n;
+  document.querySelectorAll('.screen').forEach(s => s.classList.toggle('on', s.id === 'scr-'+n));
+  document.querySelectorAll('#nav button').forEach(b => b.classList.toggle('on', b.dataset.scr === n));
+  render();
+}
+function render(){
+  refreshTop();
+  if(screenName === 'stash')  renderStash();
+  if(screenName === 'bench')  renderBench();
+  if(screenName === 'trader') renderTrader();
+  if(screenName === 'quests') renderQuests();
+  if(screenName === 'deploy') renderDeploy();
+  if(screenName === 'raid')   renderRaid();
+}
+function refreshTop(){
+  const l = levelFromXp(G.xp);
+  $('stLv').textContent = l.level;
+  $('stXp').textContent = '(' + money(l.into) + '/' + money(l.need) + ')';
+  $('stRub').textContent = money(G.rub);
+  $('stRaids').textContent = G.raids.run ? (G.raids.survived + '/' + G.raids.run + ' survived') : '';
+  const inRaid = raid && !raid.over;
+  document.querySelectorAll('#nav button').forEach(b => b.disabled = inRaid);
+  $('wipeBtn').disabled = inRaid;
+}
+function modal(html){ $('modalBox').innerHTML = html; $('modal').classList.add('on'); }
+function closeModal(){ $('modal').classList.remove('on'); }
+$('modal').addEventListener('click', e => { if(e.target.id === 'modal') closeModal(); });
+
+/* ------------------------------------------------------------------ *
+ *  Item helpers                                                       *
+ * ------------------------------------------------------------------ */
+function itemTag(it){
+  const label = { platform:'GUN', mod:it.slot ? it.slot.toUpperCase() : 'MOD', ammo:'AMMO',
+                  armor:it.type==='helmet'?'HELM':'ARMOR', rig:'RIG', med:'MED', loot:'LOOT', key:'KEY' }[it.kind] || '';
+  return '<span class="tag '+(TAGCLS[it.kind]||'')+'">'+esc(label)+'</span>';
+}
+function itemSummary(it){
+  if(it.kind === 'ammo') return 'dmg ' + it.dmg + (it.pel>1 ? '×'+it.pel : '') + ' · pen ' + it.pen + ' · ' + CALIBERS[it.cal].short;
+  if(it.kind === 'armor') return 'class ' + it.cls + ' · ' + it.dur + ' dur · ' + it.zones.length + ' zones';
+  if(it.kind === 'rig') return (it.cls ? 'class '+it.cls+' · ' : '') + it.cap + ' pouches';
+  if(it.kind === 'med') return (it.pool ? it.pool + ' hp · ' : '') + (it.cures.length ? it.cures.join('/') : 'healing') + ' · ' + it.ap + ' AP';
+  if(it.kind === 'mod'){
+    const bits = [];
+    if(it.ergo) bits.push((it.ergo>0?'+':'') + it.ergo + ' ergo');
+    if(it.rv) bits.push((it.rv>0?'+':'') + it.rv + '% recoil');
+    if(it.moa) bits.push((it.moa>0?'+':'') + it.moa + ' MOA');
+    if(it.cap) bits.push(it.cap + ' rounds');
+    if(it.sight) bits.push(it.sight + 'm sight');
+    if(it.noise) bits.push((it.noise>0?'+':'') + it.noise + ' noise');
+    if(it.vel) bits.push((it.vel>0?'+':'') + it.vel + ' m/s');
+    return bits.slice(0,3).join(' · ') || 'no stat change';
+  }
+  if(it.kind === 'platform') return CALIBERS[it.cal].short + ' · ' + it.mag + ' rounds · ergo ' + it.ergo;
+  if(it.kind === 'key') return 'unlocks an exit';
+  return '';
+}
+function gunLine(g){
+  const s = resolveWeapon(g);
+  return esc(s.name) + ' <span class="meta">' + CALIBERS[s.cal].short + ' · ergo ' + s.ergo + ' · rec ' + s.rv + '</span>';
+}
+function gunValue(g){
+  let v = ITEMS[g.plat].price;
+  for(const m of installedParts(g)) if(ITEMS[g.plat].fixed[m.slot] !== m.id) v += m.price;
+  return v;
+}
+
+/* ------------------------------------------------------------------ *
+ *  STASH                                                              *
+ * ------------------------------------------------------------------ */
+const FILTERS = [['all','All'],['weapons','Weapons'],['mods','Mods'],['ammo','Ammo'],['gear','Gear'],['meds','Meds'],['loot','Loot'],['keys','Keys']];
+function renderStash(){
+  const worth = G.stash.reduce((a,e) => a + (ITEMS[e.id].price||0)*e.n, 0) + G.guns.reduce((a,g)=>a+gunValue(g),0);
+  $('stashSub').textContent = G.stash.length + ' entries · ' + G.guns.length + ' weapons · estimated value ₽' + money(worth);
+  $('stashFilters').innerHTML = FILTERS.map(([k,l]) =>
+    '<button class="pill' + (ui.stashFilter===k?' on':'') + '" data-f="' + k + '">' + l + '</button>').join('');
+
+  let rows = '';
+  if(ui.stashFilter === 'all' || ui.stashFilter === 'weapons'){
+    for(const g of G.guns){
+      rows += '<div class="row' + (ui.stashSel==='gun:'+g.uid?' sel':'') + '" data-sel="gun:' + g.uid + '">' +
+              '<span class="tag w">GUN</span><span class="nm">' + gunLine(g) + '</span>' +
+              '<span class="price">₽' + money(gunValue(g)) + '</span></div>';
+    }
+  }
+  const entries = G.stash.filter(e => ui.stashFilter === 'all' || CAT_OF[ITEMS[e.id].kind] === ui.stashFilter);
+  entries.sort((a,b) => (ITEMS[b.id].price||0)*b.n - (ITEMS[a.id].price||0)*a.n);
+  for(const e of entries){
+    const it = ITEMS[e.id];
+    rows += '<div class="row' + (ui.stashSel===e.uid?' sel':'') + '" data-sel="' + e.uid + '">' + itemTag(it) +
+            '<span class="nm">' + esc(it.name) + (e.n>1?' <span class="meta">×'+e.n+'</span>':'') +
+            (e.dur!==undefined && it.dur ? ' <span class="meta">'+Math.round(e.dur)+'/'+it.dur+'</span>':'') + '</span>' +
+            '<span class="price">₽' + money((it.price||0)*e.n) + '</span></div>';
+  }
+  $('stashList').innerHTML = rows || '<div class="empty">Nothing here.</div>';
+
+  // detail pane
+  let d = '<div class="empty">Select an item</div>';
+  if(ui.stashSel && ui.stashSel.startsWith('gun:')){
+    const g = G.guns.find(x => x.uid === ui.stashSel.slice(4));
+    if(g) d = gunDetailHTML(g) + '<div class="mactions"><button class="btn" id="toBench">Open in workbench</button></div>';
+  } else if(ui.stashSel){
+    const e = findStash(G, ui.stashSel);
+    if(e){
+      const it = ITEMS[e.id];
+      d = '<h3 style="color:var(--acc2)">' + esc(it.name) + '</h3><div class="sub" style="margin:0 0 8px">' + esc(itemSummary(it)) + '</div>' + itemStatsHTML(it, e);
+    }
+  }
+  $('stashDetail').innerHTML = d;
+
+  const l = levelFromXp(G.xp);
+  $('charPanel').innerHTML =
+    kv('Level', l.level) + kv('Experience', money(G.xp)) +
+    kv('Next level in', money(l.need - l.into)) +
+    kv('Raids', G.raids.run) + kv('Survived', G.raids.survived + (G.raids.run ? ' (' + Math.round(G.raids.survived/G.raids.run*100) + '%)' : '')) +
+    kv('Kills', G.raids.kills) +
+    '<div class="hr"></div>' +
+    kv('Carry limit', '18 kg before AP loss') +
+    kv('Action points', playerBaseAP());
+}
+function kv(k,v){ return '<div class="kv"><span>' + k + '</span><b>' + v + '</b></div>'; }
+
+function itemStatsHTML(it, entry){
+  let h = '';
+  if(it.kind === 'ammo'){
+    h += kv('Damage', it.dmg + (it.pel>1 ? ' × ' + it.pel + ' pellets' : '')) + kv('Penetration', it.pen) +
+         kv('Armour damage', Math.round(it.aDmg*100) + '%') + kv('Fragmentation', Math.round(it.frag*100) + '%') +
+         kv('Muzzle velocity', it.vel + ' m/s') + (it.quiet ? kv('Subsonic','yes') : '');
+    h += '<div class="hr"></div><h3>Penetration chance at 50 m</h3>';
+    for(const cls of [2,3,4,5,6]){
+      const c = penChance(penAtRange(it.pen, it.vel, 50), cls, 1);
+      h += barLine('Class ' + cls, Math.round(c*100) + '%', c, c > 0.6 ? 'ok' : c > 0.25 ? 'mid' : 'bad');
+    }
+  } else if(it.kind === 'armor' || (it.kind === 'rig' && it.cls)){
+    h += kv('Class', it.cls) + kv('Durability', (entry && entry.dur !== undefined ? Math.round(entry.dur) : it.dur) + ' / ' + it.dur) +
+         kv('Covers', it.zones.map(z => LIMB_NAME[z]).join(', ')) +
+         kv('Blunt throughput', Math.round(it.blunt*100) + '%') +
+         kv('Ergonomics', it.ergo) + kv('Weight', it.w + ' kg');
+    if(entry && entry.dur !== undefined && entry.dur < it.dur)
+      h += '<div class="warnbox" style="margin-top:8px">Worn plates stop fewer rounds. This one is at ' + Math.round(entry.dur/it.dur*100) + '% effectiveness.</div>';
+  } else if(it.kind === 'mod'){
+    const rows = [['Ergonomics','ergo'],['Vertical recoil','rv','%'],['Horizontal recoil','rh','%'],['Accuracy','moa',' MOA'],
+                  ['Muzzle velocity','vel',' m/s'],['Noise','noise',' m'],['Weight','w',' kg'],['Sight range','sight',' m'],['Capacity','cap',' rds']];
+    for(const [label,k,suf] of rows) if(it[k]) h += kv(label, (it[k]>0?'+':'') + it[k] + (suf||''));
+    if(it.provides.length) h += kv('Provides', it.provides.join(', '));
+    if(it.requires) h += kv('Requires', it.requires);
+    h += kv('Fits', it.fits === '*' ? 'any platform with the slot' : it.fits.join(', '));
+  } else if(it.kind === 'med'){
+    h += (it.pool ? kv('Healing pool', it.pool + ' hp') : '') + kv('Treats', it.cures.length ? it.cures.join(', ') : 'damage only') + kv('Action points', it.ap);
+  } else if(it.kind === 'platform'){
+    h += gunDetailHTML(newGun(it.id));
+  }
+  h += '<div class="hr"></div>' + kv('Value', '₽' + money(it.price||0));
+  return h;
+}
+function barLine(k, v, frac, tone){
+  const col = tone === 'ok' ? 'var(--good)' : tone === 'mid' ? 'var(--warn)' : tone === 'bad' ? 'var(--bad)' : 'var(--acc)';
+  return '<div class="statline"><span class="k">' + k + '</span><span class="bar"><i style="width:' +
+         clamp(frac*100,0,100) + '%;background:' + col + '"></i></span><span class="v">' + v + '</span></div>';
+}
+
+/* ------------------------------------------------------------------ *
+ *  WORKBENCH                                                          *
+ * ------------------------------------------------------------------ */
+const SLOT_LABEL = { muzzle:'Muzzle', barrel:'Barrel', gasblock:'Gas block', handguard:'Handguard',
+                     dustcover:'Dust cover', pistolgrip:'Grip', stock:'Stock', mount:'Mount',
+                     optic:'Optic', mag:'Magazine', foregrip:'Foregrip', tactical:'Tactical' };
+
+function renderBench(){
+  if(!G.guns.length){
+    $('wbGuns').innerHTML = '<div class="empty">No weapons.<br>Buy one from a trader.</div>';
+    $('wbSlots').innerHTML = '<div class="empty">Nothing to work on.</div>';
+    $('wbStats').innerHTML = '';
+    return;
+  }
+  if(!ui.benchGun || !G.guns.find(g => g.uid === ui.benchGun)) ui.benchGun = G.guns[0].uid;
+  const g = G.guns.find(x => x.uid === ui.benchGun);
+
+  $('wbGuns').innerHTML = '<h3 style="padding:2px 4px">Weapons</h3>' + G.guns.map(x =>
+    '<div class="row' + (x.uid===ui.benchGun?' sel':'') + '" data-gun="' + x.uid + '">' +
+    '<span class="nm">' + esc(x.name) + '<br><span class="meta">' + CALIBERS[ITEMS[x.plat].cal].short + '</span></span></div>').join('');
+
+  const p = ITEMS[g.plat];
+  const provided = providedSet(g);
+  let sl = '<div class="gunhdr"><span class="gn">' + esc(g.name) + '</span><span class="gc">' + esc(p.name) + ' · ' + CALIBERS[p.cal].name + '</span>' +
+           '<button class="btn sm" id="renameGun" style="margin-left:auto">Rename</button></div>';
+  sl += '<div style="margin-bottom:8px"><span class="meta" style="color:var(--dim2)">Available: </span>' +
+        ['rail','lower','thread'].map(k => '<span class="pill' + (provided.has(k)?' on':'') + '">' + k + '</span>').join('') + '</div>';
+
+  for(const slot of p.slots){
+    const cur = g.mods[slot] ? ITEMS[g.mods[slot]] : null;
+    const options = modsForSlot(g, slot);
+    const usable = options.filter(o => o.ok).length;
+    sl += '<div class="slot' + (usable||cur ? '' : ' locked') + '" data-slot="' + slot + '">' +
+          '<span class="sn">' + SLOT_LABEL[slot] + '</span>' +
+          '<span class="sv' + (cur?'':' none') + '">' + (cur ? esc(cur.name) : 'empty') + '</span>' +
+          '<span class="meta">' + (usable ? usable + ' avail' : (cur ? '' : 'none')) + '</span></div>';
+  }
+  // ammunition is part of the build
+  const owned = AMMO.filter(a => a.cal === p.cal && stashCount(G, a.id) > 0);
+  sl += '<div class="hr"></div><h3>Loaded ammunition</h3>';
+  if(!owned.length) sl += '<div class="reqnote">No ' + CALIBERS[p.cal].short + ' in the stash. Buy some from a trader.</div>';
+  sl += '<select id="ammoSel">' + AMMO.filter(a => a.cal === p.cal).map(a =>
+        '<option value="' + a.id + '"' + (a.id===g.ammo?' selected':'') + (stashCount(G,a.id)?'':' disabled') + '>' +
+        esc(a.name) + ' — dmg ' + a.dmg + ', pen ' + a.pen + ' (' + stashCount(G,a.id) + ' rds)</option>').join('') + '</select>';
+  $('wbSlots').innerHTML = sl;
+  $('wbStats').innerHTML = gunDetailHTML(g, true);
+}
+
+/* Every mod that could go in this slot, flagged with whether it is legal
+   and whether the player actually owns one. */
+function modsForSlot(g, slot){
+  const p = ITEMS[g.plat];
+  const out = [];
+  for(const m of MODS){
+    if(m.slot !== slot) continue;
+    if(m.fits !== '*' && !m.fits.includes(p.family)) continue;
+    const isFactory = p.fixed && p.fixed[slot] === m.id;
+    const installed = g.mods[slot] === m.id;
+    const owned = stashCount(G, m.id) > 0 || isFactory || installed;
+    const chk = canInstall(g, m);
+    out.push({ mod:m, ok: chk.ok && owned, why: !chk.ok ? chk.why : (!owned ? 'Not in stash' : ''), owned, installed, isFactory });
+  }
+  return out;
+}
+function openSlotModal(g, slot){
+  const opts = modsForSlot(g, slot);
+  const cur = g.mods[slot] ? ITEMS[g.mods[slot]] : null;
+  const before = resolveWeapon(g);
+  let h = '<h2>' + SLOT_LABEL[slot] + '</h2><div class="sub">' + esc(g.name) + ' — currently ' + (cur ? esc(cur.name) : 'empty') + '</div>';
+
+  if(cur){
+    const orph = dependentsOf(g, slot);
+    h += '<div class="row" data-install="__none"><span class="nm" style="color:var(--dim)">Remove ' + esc(cur.name) + '</span>' +
+         (orph.length ? '<span class="meta" style="color:var(--warn)">also drops ' + orph.map(s=>SLOT_LABEL[s]).join(', ') + '</span>' : '') + '</div><div class="hr"></div>';
+  }
+  const sorted = opts.slice().sort((a,b) => (b.ok?1:0)-(a.ok?1:0) || a.mod.price-b.mod.price);
+  for(const o of sorted){
+    const m = o.mod;
+    // preview the build with this part fitted
+    let deltaTxt = '';
+    if(o.ok){
+      const test = { plat:g.plat, mods:Object.assign({}, g.mods, { [slot]:m.id }), ammo:g.ammo, uid:g.uid, name:g.name };
+      const after = resolveWeapon(test);
+      const bits = [];
+      const d = (label, a, b, invert) => {
+        if(a === b) return;
+        const up = invert ? b < a : b > a;
+        bits.push('<span class="delta ' + (up?'up':'down') + '">' + label + ' ' + (b>a?'+':'') + (+(b-a).toFixed(2)) + '</span>');
+      };
+      d('ergo', before.ergo, after.ergo);
+      d('recoil', before.rv, after.rv, true);
+      d('MOA', before.moa, after.moa, true);
+      d('range', before.sight, after.sight);
+      d('kg', before.weight, after.weight, true);
+      deltaTxt = bits.join(' ');
+    }
+    h += '<div class="row' + (o.ok ? '' : ' locked') + '"' + (o.ok ? ' data-install="' + m.id + '"' : '') +
+         ' style="' + (o.ok?'':'opacity:.42;cursor:not-allowed') + '">' +
+         '<span class="nm">' + esc(m.name) + (o.installed ? ' <span class="meta">— fitted</span>' : '') +
+         '<br><span class="meta">' + (deltaTxt || esc(o.why || itemSummary(m))) + '</span></span>' +
+         '<span class="price">' + (o.isFactory ? 'stock' : (o.owned ? 'owned' : '₽' + money(m.price))) + '</span></div>';
+  }
+  h += '<div class="mactions"><button class="btn" onclick="closeModal()">Close</button></div>';
+  modal(h);
+}
+function installMod(g, slot, modId){
+  const p = ITEMS[g.plat];
+  const prev = g.mods[slot];
+  const returnPrev = () => {
+    if(prev && !(p.fixed && p.fixed[slot] === prev)) stashAdd(G, prev, 1);
+  };
+  if(modId === '__none'){
+    for(const s of dependentsOf(g, slot)){
+      if(!(p.fixed && p.fixed[s] === g.mods[s])) stashAdd(G, g.mods[s], 1);
+      delete g.mods[s];
+    }
+    returnPrev();
+    delete g.mods[slot];
+  } else {
+    const m = ITEMS[modId];
+    const isFactory = p.fixed && p.fixed[slot] === modId;
+    if(!isFactory && stashCount(G, modId) <= 0) return;
+    returnPrev();
+    if(!isFactory) stashRemove(G, modId, 1);
+    g.mods[slot] = modId;
+    // a swap can invalidate something that depended on the old part
+    for(const s in g.mods){
+      const mm = ITEMS[g.mods[s]];
+      if(s !== slot && mm && mm.requires && !providedSet(g).has(mm.requires)){
+        if(!(p.fixed && p.fixed[s] === g.mods[s])) stashAdd(G, g.mods[s], 1);
+        delete g.mods[s];
+      }
+    }
+  }
+  checkBuildQuests();
+  save();
+  closeModal();
+  render();
+}
+
+/* The stat readout — the payoff for the whole modding system. */
+function gunDetailHTML(g, full){
+  const s = resolveWeapon(g);
+  const p = ITEMS[g.plat];
+  const eff = effectiveRange(s);
+  const ammo = ITEMS[s.ammo];
+  let h = '<h3>' + esc(s.name) + '</h3>';
+  h += barLine('Ergonomics', s.ergo, s.ergo/110);
+  h += barLine('Vert. recoil', s.rv, 1 - clamp(s.rv/260,0,1), s.rv < 100 ? 'ok' : s.rv < 160 ? 'mid' : 'bad');
+  h += barLine('Horiz. recoil', s.rh, 1 - clamp(s.rh/600,0,1), s.rh < 260 ? 'ok' : s.rh < 420 ? 'mid' : 'bad');
+  h += barLine('Dispersion', s.moa + ' MOA', 1 - clamp(s.moa/6,0,1), s.moa < 2 ? 'ok' : s.moa < 3.5 ? 'mid' : 'bad');
+  h += barLine('Sight range', s.sight + ' m', s.sight/280);
+  h += barLine('Effective', eff + ' m', eff/300, eff > 150 ? 'ok' : eff > 70 ? 'mid' : 'bad');
+  h += barLine('Weight', s.weight + ' kg', 1 - clamp(s.weight/8,0,1), s.weight < 3.5 ? 'ok' : s.weight < 5 ? 'mid' : 'bad');
+  h += barLine('Noise', s.noise + ' m', 1 - clamp(s.noise/95,0,1), s.suppressed ? 'ok' : 'mid');
+  h += '<div class="hr"></div>';
+  h += kv('Calibre', CALIBERS[s.cal].name) + kv('Magazine', s.mag + ' rounds') +
+       kv('Fire modes', s.modes.map(m => FIRE_MODES[m].label).join(', ')) +
+       kv('AP per shot', s.apShot + (s.boltAP ? ' (+' + s.boltAP + ' bolt)' : '')) +
+       kv('AP per reload', s.apReload) +
+       kv('Muzzle velocity', s.vel + ' m/s') +
+       (s.zoom > 1 ? kv('Magnification', s.zoom + '×') : '') +
+       (s.suppressed ? kv('Suppressed', 'yes') : '');
+
+  if(full){
+    h += '<div class="hr"></div><h3>' + esc(ammo.name) + ' vs armour</h3>';
+    h += '<div class="kv" style="color:var(--dim2)"><span>class</span><b>25 m / 75 m / 150 m</b></div>';
+    for(const cls of [2,3,4,5,6]){
+      const at = m => Math.round(penChance(penAtRange(ammo.pen, ammo.vel, m), cls, 1) * 100) + '%';
+      h += kv('Class ' + cls, at(25) + ' / ' + at(75) + ' / ' + at(150));
+    }
+    h += '<div class="hr"></div>' + kv('Build value', '₽' + money(gunValue(g)));
+    const missing = p.slots.filter(sl => !g.mods[sl] && (sl === 'mag'));
+    if(missing.length) h += '<div class="warnbox" style="margin-top:8px">No magazine fitted — this weapon cannot be taken into a raid.</div>';
+  }
+  return h;
+}
+
+/* ------------------------------------------------------------------ *
+ *  TRADERS                                                            *
+ * ------------------------------------------------------------------ */
+function renderTrader(){
+  $('traderTabs').innerHTML = TRADERS.map(t =>
+    '<button class="pill' + (ui.trader===t.id?' on':'') + '" data-tr="' + t.id + '" style="padding:5px 12px">' +
+    t.name + ' <span style="color:var(--dim2)">L' + traderLoyalty(t.id) + '</span></button>').join('');
+
+  const t = TRADERS.find(x => x.id === ui.trader);
+  const loy = traderLoyalty(t.id);
+  let buy = '<div class="sub" style="padding:6px 8px 10px">' + esc(t.blurb) + '<br><span style="color:var(--dim2)">Loyalty ' + loy +
+            ' · spent ₽' + money(G.spend[t.id]||0) + (loy < 4 ? ' · next level at ₽' + money([0,0,120000,450000,1100000][loy+1]) + ' and level ' + [0,1,6,12,20][loy+1] : '') + '</span></div>';
+
+  for(const [id, lv] of t.stock){
+    const it = ITEMS[id];
+    if(!it) continue;
+    const locked = lv > loy;
+    const price = Math.round(it.price * 1.0);
+    buy += '<div class="row' + (locked?' locked':'') + '"' + (locked?'':' data-buy="' + id + '"') +
+           ' style="' + (locked?'opacity:.38;cursor:not-allowed':'') + '">' + itemTag(it) +
+           '<span class="nm">' + esc(it.name) + '<br><span class="meta">' + esc(itemSummary(it)) + '</span></span>' +
+           '<span class="price">' + (locked ? 'LL' + lv : '₽' + money(price)) + '</span></div>';
+  }
+  $('traderBuy').innerHTML = buy;
+
+  let sell = '';
+  const sellable = G.stash.filter(e => t.buys.includes(ITEMS[e.id].kind));
+  sellable.sort((a,b) => (ITEMS[b.id].price||0)*b.n - (ITEMS[a.id].price||0)*a.n);
+  for(const e of sellable){
+    const it = ITEMS[e.id];
+    const each = Math.round((it.price||0) * t.rate * (e.dur !== undefined && it.dur ? clamp(e.dur/it.dur, 0.25, 1) : 1));
+    sell += '<div class="row" data-sell="' + e.uid + '">' + itemTag(it) +
+            '<span class="nm">' + esc(it.name) + (e.n>1?' <span class="meta">×'+e.n+'</span>':'') + '</span>' +
+            '<span class="price">₽' + money(each) + (e.n>1?' ea':'') + '</span></div>';
+  }
+  if(t.buys.includes('platform')){
+    for(const g of G.guns){
+      sell += '<div class="row" data-sellgun="' + g.uid + '"><span class="tag w">GUN</span>' +
+              '<span class="nm">' + esc(g.name) + '</span><span class="price">₽' + money(Math.round(gunValue(g)*t.rate)) + '</span></div>';
+    }
+  }
+  $('traderSell').innerHTML = sell || '<div class="empty">' + t.name + ' does not buy anything you have.</div>';
+}
+function doBuy(id){
+  const it = ITEMS[id];
+  const t = TRADERS.find(x => x.id === ui.trader);
+  const isAmmo = it.kind === 'ammo';
+  const qty = isAmmo ? 30 : 1;
+  const cost = it.price * qty;
+  if(G.rub < cost){ toast('Not enough roubles.'); return; }
+  G.rub -= cost;
+  G.spend[t.id] = (G.spend[t.id] || 0) + cost;
+  if(it.kind === 'platform') G.guns.push(newGun(id));
+  else stashAdd(G, id, qty);
+  save(); render();
+}
+function doSell(uid){
+  const e = findStash(G, uid);
+  if(!e) return;
+  const it = ITEMS[e.id];
+  const t = TRADERS.find(x => x.id === ui.trader);
+  const each = Math.round((it.price||0) * t.rate * (e.dur !== undefined && it.dur ? clamp(e.dur/it.dur, 0.25, 1) : 1));
+  G.rub += each; e.n--;
+  if(e.n <= 0) stashRemoveUid(G, uid);
+  save(); render();
+}
+function doSellGun(guid){
+  const i = G.guns.findIndex(g => g.uid === guid);
+  if(i < 0) return;
+  const t = TRADERS.find(x => x.id === ui.trader);
+  G.rub += Math.round(gunValue(G.guns[i]) * t.rate);
+  G.guns.splice(i,1);
+  save(); render();
+}
+function toast(msg){
+  rlogUI(msg);
+}
+let toastTimer = null;
+function rlogUI(msg){
+  let t = document.getElementById('toast');
+  if(!t){
+    t = document.createElement('div');
+    t.id = 'toast';
+    t.style.cssText = 'position:fixed;bottom:18px;left:50%;transform:translateX(-50%);background:var(--panel2);border:1px solid var(--warn);color:var(--warn);padding:8px 16px;z-index:99;font-size:12px';
+    document.body.appendChild(t);
+  }
+  t.textContent = msg;
+  t.style.display = 'block';
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => { t.style.display = 'none'; }, 2200);
+}
+
+/* ------------------------------------------------------------------ *
+ *  TASKS                                                              *
+ * ------------------------------------------------------------------ */
+function renderQuests(){
+  checkBuildQuests();
+  $('questList').innerHTML = QUESTS.map(q => {
+    const st = G.quests[q.id];
+    const loy = traderLoyalty(q.trader);
+    const locked = loy < q.unlock;
+    const ready = !st.done && st.prog >= q.target;
+    const tr = TRADERS.find(t => t.id === q.trader);
+    return '<div class="panel" style="' + (locked?'opacity:.45':'') + '">' +
+      '<div style="display:flex;align-items:baseline;gap:8px"><h3 style="margin:0;color:' + (st.done?'var(--good)':'var(--acc2)') + '">' + esc(q.name) + '</h3>' +
+      '<span class="meta" style="color:var(--dim2);margin-left:auto">' + tr.name + '</span></div>' +
+      '<div style="color:var(--dim);margin:5px 0 9px;font-size:11px">' + esc(q.desc) + '</div>' +
+      (locked ? '<div class="reqnote">Requires ' + tr.name + ' loyalty ' + q.unlock + '</div>'
+              : barLine('Progress', Math.min(st.prog,q.target) + '/' + q.target, Math.min(st.prog/q.target,1), st.done?'ok':'')) +
+      '<div class="kv" style="margin-top:6px"><span>Reward</span><b>₽' + money(q.rub) + ' · ' + money(q.xp) + ' xp</b></div>' +
+      (st.done ? '<div class="okbox" style="margin:8px 0 0">Completed</div>'
+               : ready ? '<div class="mactions" style="margin-top:10px"><button class="btn pri" data-claim="' + q.id + '">Turn in</button></div>' : '') +
+      '</div>';
+  }).join('');
+}
+
+/* ------------------------------------------------------------------ *
+ *  DEPLOY                                                             *
+ * ------------------------------------------------------------------ */
+function ensureLoadout(){
+  if(!G.loadout) G.loadout = { gun:null, mags:2, armor:null, helmet:null, rig:null, meds:[], map:'factory' };
+  const lo = G.loadout;
+  if(lo.gun && !G.guns.find(g => g.uid === lo.gun)) lo.gun = null;
+  if(!lo.gun && G.guns.length) lo.gun = G.guns[0].uid;
+  for(const s of ['armor','helmet','rig']) if(lo[s] && !findStash(G, lo[s])) lo[s] = null;
+  lo.meds = (lo.meds||[]).filter(id => stashCount(G, id) > 0);
+  return lo;
+}
+function renderDeploy(){
+  const lo = ensureLoadout();
+  const gun = G.guns.find(g => g.uid === lo.gun) || null;
+  const gs = gun ? resolveWeapon(gun) : null;
+
+  let h = '';
+  h += '<div class="kv" style="margin-bottom:6px"><span>Weapon</span><b>' + (gun ? esc(gun.name) : 'none') + '</b></div>';
+  h += '<select id="loGun"><option value="">— unarmed —</option>' + G.guns.map(g =>
+       '<option value="' + g.uid + '"' + (g.uid===lo.gun?' selected':'') + '>' + esc(g.name) + ' (' + CALIBERS[ITEMS[g.plat].cal].short + ')</option>').join('') + '</select>';
+
+  if(gs){
+    const have = stashCount(G, gs.ammo);
+    const maxMags = Math.max(0, Math.floor(have / gs.mag) - 1);
+    h += '<div class="hr"></div>';
+    h += '<div class="kv"><span>Ammunition</span><b>' + esc(gs.ammoName) + '</b></div>';
+    h += '<div class="kv"><span>In stash</span><b>' + have + ' rounds</b></div>';
+    if(have < gs.mag) h += '<div class="warnbox" style="margin-top:6px">Not enough ' + CALIBERS[gs.cal].short + ' to fill a magazine. Buy more, or change the loaded ammunition in the workbench.</div>';
+    h += '<div class="statline" style="margin-top:6px"><span class="k">Spare magazines</span>' +
+         '<span class="bar" style="flex:0 0 auto;border:none;background:none;height:auto">' +
+         '<button class="btn sm" data-mag="-1">−</button> <b style="padding:0 8px">' + lo.mags + '</b> <button class="btn sm" data-mag="1">+</button></span>' +
+         '<span class="v">' + ((lo.mags+1) * gs.mag) + ' rds</span></div>';
+    if(maxMags < lo.mags) h += '<div class="reqnote">Only enough rounds for ' + maxMags + ' spare magazines.</div>';
+  }
+
+  // armour
+  h += '<div class="hr"></div>';
+  for(const [slot, label, pred] of [['armor','Body armour', e => ITEMS[e.id].type==='armor'],
+                                    ['helmet','Helmet',     e => ITEMS[e.id].type==='helmet'],
+                                    ['rig','Chest rig',     e => ITEMS[e.id].type==='rig']]){
+    const opts = G.stash.filter(pred);
+    h += '<div class="kv" style="margin-top:4px"><span>' + label + '</span></div>';
+    h += '<select data-slot="' + slot + '"><option value="">— none —</option>' + opts.map(e => {
+      const it = ITEMS[e.id];
+      return '<option value="' + e.uid + '"' + (lo[slot]===e.uid?' selected':'') + '>' + esc(it.name) +
+             (it.cls ? ' — class ' + it.cls : '') + (it.dur ? ' (' + Math.round(e.dur) + '/' + it.dur + ')' : '') +
+             (it.cap ? ' — ' + it.cap + ' pouches' : '') + '</option>';
+    }).join('') + '</select>';
+  }
+
+  // medical
+  const cap = lo.rig ? ITEMS[findStash(G, lo.rig).id].cap : 2;
+  h += '<div class="hr"></div><div class="kv"><span>Medical (' + lo.meds.length + '/' + cap + ' pouches)</span></div>';
+  const medStack = {};
+  for(const e of G.stash) if(ITEMS[e.id].kind === 'med') medStack[e.id] = (medStack[e.id]||0) + e.n;
+  h += '<div style="margin-top:4px">' + Object.keys(medStack).map(id => {
+    const taken = lo.meds.filter(m => m === id).length;
+    return '<div class="row" style="cursor:default"><span class="tag med">MED</span><span class="nm">' + esc(ITEMS[id].name) +
+           ' <span class="meta">×' + medStack[id] + '</span></span>' +
+           '<button class="btn sm" data-med="-' + id + '">−</button><b style="padding:0 6px">' + taken + '</b>' +
+           '<button class="btn sm" data-med="+' + id + '">+</button></div>';
+  }).join('') || '<div class="empty">No medical supplies.</div>';
+  h += '</div>';
+  $('loadoutPanel').innerHTML = h;
+
+  // maps
+  $('mapPanel').innerHTML = MAPS.map(m => {
+    const locked = G.level < m.minLevel;
+    return '<div class="row' + (lo.map===m.id?' sel':'') + (locked?' locked':'') + '"' + (locked?'':' data-map="' + m.id + '"') +
+      ' style="' + (locked?'opacity:.4;cursor:not-allowed':'') + '">' +
+      '<span class="nm"><b style="color:var(--acc2)">' + m.name + '</b><br><span class="meta">' + esc(m.blurb) + '</span></span>' +
+      '<span class="meta">' + (locked ? 'level ' + m.minLevel : m.enemies[0] + '–' + m.enemies[1] + ' hostiles') + '</span></div>';
+  }).join('');
+
+  // readiness
+  const kit = { gun:gs, armor:lo.armor?findStash(G,lo.armor).id:null, helmet:lo.helmet?findStash(G,lo.helmet).id:null,
+                rig:lo.rig?findStash(G,lo.rig).id:null, spareMags:lo.mags, meds:lo.meds };
+  const wt = totalWeight(kit);
+  let ergoPen = 0;
+  for(const s of ['armor','helmet','rig']) if(kit[s]) ergoPen += ITEMS[kit[s]].ergo || 0;
+  const effErgo = gs ? clamp(gs.ergo + ergoPen, 5, 120) : 0;
+  const ap = apFromLoad(playerBaseAP(), wt, kit.armor);
+
+  let risk = gs ? gunValue(gun) : 0;
+  for(const s of ['armor','helmet','rig']) if(kit[s]) risk += ITEMS[kit[s]].price;
+  for(const m of lo.meds) risk += ITEMS[m].price;
+  if(gs) risk += (lo.mags+1) * gs.mag * ITEMS[gs.ammo].price;
+
+  const problems = [];
+  if(!gs) problems.push('No weapon selected.');
+  else {
+    if(!gun.mods.mag && ITEMS[gun.plat].slots.includes('mag')) problems.push('No magazine fitted — visit the workbench.');
+    if(stashCount(G, gs.ammo) < gs.mag) problems.push('Not enough ammunition for one magazine.');
+  }
+  const mapDef = MAPS.find(m => m.id === lo.map);
+  if(G.level < mapDef.minLevel) problems.push('Level ' + mapDef.minLevel + ' required for ' + mapDef.name + '.');
+
+  let r = barLine('Effective ergo', effErgo, effErgo/110, effErgo > 55 ? 'ok' : effErgo > 35 ? 'mid' : 'bad');
+  r += barLine('Total weight', wt + ' kg', 1 - clamp(wt/28,0,1), wt < 14 ? 'ok' : wt < 21 ? 'mid' : 'bad');
+  r += barLine('Action points', ap, ap/14, ap >= 8 ? 'ok' : ap >= 6 ? 'mid' : 'bad');
+  if(gs){
+    r += barLine('AP per shot', gs.apShot, 1 - gs.apShot/7, gs.apShot <= 3 ? 'ok' : gs.apShot <= 4 ? 'mid' : 'bad');
+    r += barLine('Effective range', effectiveRange(gs) + ' m', effectiveRange(gs)/300);
+  }
+  r += '<div class="hr"></div>' + kv('Value at risk', '₽' + money(risk)) + kv('Destination', mapDef.name);
+  if(ergoPen) r += kv('Armour ergo penalty', ergoPen);
+  r += '<div class="hr"></div>';
+  r += problems.length ? '<div class="warnbox">' + problems.map(esc).join('<br>') + '</div>'
+                       : '<div class="okbox">Ready to deploy.</div>';
+  r += '<div class="mactions"><button class="btn pri" id="deployBtn"' + (problems.length?' disabled':'') + '>Deploy</button></div>';
+  $('readyPanel').innerHTML = r;
+}
+function doDeploy(){
+  const lo = ensureLoadout();
+  const gun = G.guns.find(g => g.uid === lo.gun);
+  if(!gun) return;
+  const gs = resolveWeapon(gun);
+  const have = stashCount(G, gs.ammo);
+  const wanted = (lo.mags + 1) * gs.mag;
+  const take = Math.min(have, wanted);
+  const mags = Math.max(0, Math.floor(take / gs.mag) - 1);
+  stashRemove(G, gs.ammo, take);
+  for(const m of lo.meds) stashRemove(G, m, 1);
+  const payload = Object.assign({}, lo, { gunObj:gun, mags });
+  save();
+  startRaid(lo.map, payload);
+  screenName = 'raid';
+  document.querySelectorAll('.screen').forEach(s => s.classList.toggle('on', s.id === 'scr-raid'));
+  document.querySelectorAll('#nav button').forEach(b => b.classList.remove('on'));
+  sizeCanvas();
+  render();
+}
+/* ==========================================================================
+   SECTION 5 — THE RAID VIEW
+   Canvas rendering with fog of war, input, the after-action report, and boot.
+   ========================================================================== */
+
+const TILE = 22;
+let ctx = null;
+const COL = {
+  [T.FLOOR]:    '#151917', [T.WALL]:     '#44514a', [T.LOWCOVER]: '#38492f',
+  [T.DOOR]:     '#4a3f2c', [T.CONTAINER]:'#5c4a26', [T.EXTRACT]:  '#1f4a30',
+  [T.TREE]:     '#1f3626', [T.WATER]:    '#18303c',
+};
+const ENEMY_COL = { scav:'#c08040', marksman:'#c8b040', raider:'#c05040', boss:'#b060b0', guard:'#b06848' };
+const ENEMY_CH  = { scav:'s', marksman:'m', raider:'R', boss:'B', guard:'g' };
+
+function sizeCanvas(){
+  const c = $('grid'), box = $('canvasBox');
+  if(!c || !box || !box.clientWidth) return;
+  const dpr = Math.min(window.devicePixelRatio || 1, 2);
+  c.width  = Math.max(1, Math.floor(box.clientWidth  * dpr));
+  c.height = Math.max(1, Math.floor(box.clientHeight * dpr));
+  c.style.width = box.clientWidth + 'px';
+  c.style.height = box.clientHeight + 'px';
+  ctx = c.getContext('2d');
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+}
+function camera(){
+  const box = $('canvasBox');
+  const vw = box.clientWidth / TILE, vh = box.clientHeight / TILE;
+  const p = raid.player;
+  let cx = p.x - vw/2 + 0.5, cy = p.y - vh/2 + 0.5;
+  cx = raid.map.w <= vw ? (raid.map.w - vw)/2 : clamp(cx, 0, raid.map.w - vw);
+  cy = raid.map.h <= vh ? (raid.map.h - vh)/2 : clamp(cy, 0, raid.map.h - vh);
+  return { cx, cy, vw, vh };
+}
+function screenToTile(px, py){
+  const { cx, cy } = camera();
+  return [Math.floor(px/TILE + cx), Math.floor(py/TILE + cy)];
+}
+
+function drawRaid(){
+  if(!ctx) sizeCanvas();
+  if(!ctx || !raid) return;
+  const box = $('canvasBox');
+  const W = box.clientWidth, H = box.clientHeight;
+  const { cx, cy } = camera();
+  const map = raid.map;
+
+  ctx.fillStyle = '#070908';
+  ctx.fillRect(0, 0, W, H);
+
+  const x0 = Math.max(0, Math.floor(cx)), y0 = Math.max(0, Math.floor(cy));
+  const x1 = Math.min(map.w-1, Math.ceil(cx + W/TILE)), y1 = Math.min(map.h-1, Math.ceil(cy + H/TILE));
+
+  for(let y = y0; y <= y1; y++){
+    for(let x = x0; x <= x1; x++){
+      const k = y*map.w + x;
+      const vis = raid.visible.has(k), exp = raid.explored.has(k);
+      if(!vis && !exp) continue;
+      const t = map.at(x,y);
+      const sx = (x - cx)*TILE, sy = (y - cy)*TILE;
+
+      ctx.globalAlpha = vis ? 1 : 0.34;
+      ctx.fillStyle = COL[t] || '#151917';
+      if(t === T.WALL){
+        ctx.fillRect(sx, sy, TILE, TILE);
+        ctx.fillStyle = '#55635b';
+        ctx.fillRect(sx, sy, TILE, 2);          // lit top edge reads as height
+      } else {
+        ctx.fillRect(sx, sy, TILE-1, TILE-1);
+      }
+
+      // texture the special tiles so they read at a glance
+      if(t === T.LOWCOVER){
+        ctx.fillStyle = '#5c7449';
+        ctx.fillRect(sx+2, sy+TILE*0.42, TILE-5, TILE*0.44);
+      } else if(t === T.CONTAINER){
+        const c = raid.containers.find(o => o.x===x && o.y===y);
+        ctx.fillStyle = c && c.opened ? '#3a3020' : (c && c.body ? '#7a3838' : '#8a7030');
+        ctx.fillRect(sx+3, sy+3, TILE-7, TILE-7);
+        if(c && !c.opened){
+          ctx.fillStyle = '#0a0c0b';
+          ctx.fillRect(sx+TILE*0.42, sy+TILE*0.42, 3, 3);
+        }
+      } else if(t === T.TREE){
+        ctx.fillStyle = '#2d5236';
+        ctx.beginPath();
+        ctx.arc(sx+TILE/2, sy+TILE/2, TILE*0.36, 0, Math.PI*2);
+        ctx.fill();
+      } else if(t === T.DOOR){
+        ctx.fillStyle = '#6b5a3c';
+        ctx.fillRect(sx+1, sy+TILE*0.35, TILE-3, TILE*0.3);
+      } else if(t === T.EXTRACT){
+        ctx.globalAlpha = vis ? 0.85 : 0.3;
+        ctx.strokeStyle = '#5ec27e';
+        ctx.lineWidth = 1.5;
+        ctx.strokeRect(sx+2, sy+2, TILE-5, TILE-5);
+      }
+      ctx.globalAlpha = 1;
+    }
+  }
+
+  // extract labels
+  for(const ex of raid.extracts){
+    if(!raid.explored.has(ex.y*map.w+ex.x)) continue;
+    const sx = (ex.x - cx)*TILE, sy = (ex.y - cy)*TILE;
+    ctx.fillStyle = ex.key ? '#c9a961' : '#6fd897';
+    ctx.font = '9px ui-monospace, monospace';
+    ctx.textAlign = 'center';
+    ctx.fillText(ex.key ? 'LOCKED' : ex.name, sx + TILE/2, sy - 3);
+  }
+
+  // entities
+  for(const e of raid.ents){
+    if(!e.alive) continue;
+    const k = e.y*map.w + e.x;
+    if(e.side !== 'player' && !raid.visible.has(k)) continue;
+    const sx = (e.x - cx)*TILE, sy = (e.y - cy)*TILE;
+    const isP = e.side === 'player';
+    ctx.fillStyle = isP ? '#9db668' : (ENEMY_COL[e.type] || '#c08040');
+    ctx.fillRect(sx+2, sy+2, TILE-5, TILE-5);
+    ctx.fillStyle = '#0b0e0d';
+    ctx.font = 'bold 13px ui-monospace, monospace';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(isP ? '@' : (ENEMY_CH[e.type] || 's'), sx + TILE/2 - 0.5, sy + TILE/2);
+
+    // stance and health pips
+    if(e.stance !== 'stand'){
+      ctx.fillStyle = '#0b0e0d';
+      ctx.fillRect(sx+2, sy+TILE-6, e.stance==='prone' ? TILE-5 : (TILE-5)/2, 2);
+    }
+    if(!isP){
+      const frac = totalHP(e)/totalMaxHP(e);
+      ctx.fillStyle = frac > 0.6 ? '#6fa87c' : frac > 0.3 ? '#d99a4e' : '#c1533f';
+      ctx.fillRect(sx+2, sy, (TILE-5)*frac, 2);
+      if(e.state === 'engage'){
+        ctx.strokeStyle = '#c1533f';
+        ctx.lineWidth = 1;
+        ctx.strokeRect(sx+0.5, sy+0.5, TILE-2, TILE-2);
+      }
+    }
+  }
+
+  // line to the hovered target
+  if(raid.hoverTile && !raid.over){
+    const [hx, hy] = raid.hoverTile;
+    const tgt = entAt(hx, hy);
+    if(tgt && tgt.side === 'ai' && raid.visible.has(hy*map.w+hx)){
+      const p = raid.player;
+      const los = hasLOS(map, p.x, p.y, hx, hy);
+      ctx.strokeStyle = los ? '#9db66899' : '#c1533f77';
+      ctx.lineWidth = 1;
+      ctx.setLineDash([3,3]);
+      ctx.beginPath();
+      ctx.moveTo((p.x-cx)*TILE + TILE/2, (p.y-cy)*TILE + TILE/2);
+      ctx.lineTo((hx-cx)*TILE + TILE/2, (hy-cy)*TILE + TILE/2);
+      ctx.stroke();
+      ctx.setLineDash([]);
+    }
+    ctx.strokeStyle = '#7d8a8266';
+    ctx.strokeRect((hx-cx)*TILE + 0.5, (hy-cy)*TILE + 0.5, TILE-2, TILE-2);
+  }
+  ctx.textAlign = 'left';
+  ctx.textBaseline = 'alphabetic';
+}
+
+/* ------------------------------------------------------------------ *
+ *  Raid side panel                                                    *
+ * ------------------------------------------------------------------ */
+function renderRaid(){
+  if(!raid) return;
+  drawRaid();
+  const p = raid.player;
+
+  const seen = raid.ents.filter(e => e.alive && e.side==='ai' && raid.visible.has(e.y*raid.map.w+e.x)).length;
+  const onExtract = raid.extracts.find(e => dist(e.x,e.y,p.x,p.y) <= 1);
+  $('raidHdr').innerHTML =
+    '<div style="display:flex;align-items:baseline;gap:8px"><b style="color:var(--acc2);letter-spacing:2px">' + raid.def.name + '</b>' +
+    '<span class="meta" style="color:var(--dim2);margin-left:auto">turn ' + raid.turn + '</span></div>' +
+    '<div class="kv" style="margin-top:4px"><span>In sight</span><b style="color:' + (seen?'var(--bad)':'var(--dim)') + '">' + seen + ' hostile' + (seen===1?'':'s') + '</b></div>' +
+    '<div class="kv"><span>Carrying</span><b>' + raid.bag.length + ' items · ₽' + money(raid.bag.reduce((a,b)=>a+(ITEMS[b.id].price||0)*b.n,0)) + '</b></div>' +
+    (onExtract ? '<div class="okbox" style="margin:6px 0 0">Standing on ' + onExtract.name + '</div>' : '');
+
+  // body diagram
+  const cell = l => {
+    const b = p.body[l], frac = b.hp/b.max;
+    const cls = b.hp <= 0 ? 'black' : frac < 0.34 ? 'crit' : frac < 0.7 ? 'hurt' : '';
+    const bleed = p.effects.bleeds.find(x => x.zone === l);
+    const frac2 = p.effects.frac[l];
+    return '<div class="lm ' + cls + '"><em style="height:' + Math.round(frac*100) + '%"></em>' +
+           '<b>' + LIMB_NAME[l] + (bleed ? (bleed.kind==='heavy'?' ✚✚':' ✚') : '') + (frac2 ? ' ⚡' : '') + '</b>' +
+           '<u>' + Math.max(0,Math.round(b.hp)) + '</u></div>';
+  };
+  $('bodyPanel').innerHTML =
+    '<div></div>' + cell('head') + '<div></div>' +
+    cell('larm') + cell('thorax') + cell('rarm') +
+    '<div></div>' + cell('stomach') + '<div></div>' +
+    cell('lleg') + '<div></div>' + cell('rleg');
+
+  // weapon
+  let w = '';
+  if(p.gun){
+    const fm = FIRE_MODES[raid.mode];
+    const shotCost = p.gun.apShot + fm.apAdd + (p.gun.boltAP||0) + raid.aimAP;
+    w += '<div style="display:flex;align-items:baseline;gap:6px"><b style="color:var(--acc2)">' + esc(p.gun.name) + '</b>' +
+         '<span class="meta" style="margin-left:auto;color:var(--dim2)">' + esc(p.gun.ammoName) + '</span></div>';
+    w += '<div class="kv"><span>Magazine</span><b style="color:' + (p.magLoaded?'var(--txt)':'var(--bad)') + '">' +
+         p.magLoaded + '/' + p.gun.mag + ' · ' + p.spareMags + ' spare</b></div>';
+    w += '<div class="kv"><span>Mode</span><b>' + fm.label + ' — ' + shotCost + ' AP</b></div>';
+    w += '<div class="kv"><span>Aim</span><b>' + (raid.aimAP ? '+' + raid.aimAP + ' AP (+' + (raid.aimAP*9) + '% hit)' : 'none') + '</b></div>';
+  } else {
+    w = '<div class="empty">Unarmed</div>';
+  }
+  if(p.meds.length){
+    w += '<div class="hr" style="margin:6px 0"></div>';
+    w += p.meds.map((m,i) => '<button class="btn sm" data-med-use="' + i + '" style="margin:0 3px 3px 0">' +
+         esc(ITEMS[m.id].name.split(' ')[0]) + (m.pool>0 ? ' ' + Math.round(m.pool) : '') + '</button>').join('');
+  }
+  $('wpnPanel').innerHTML = w;
+
+  // actions
+  const acts = [];
+  if(p.gun) acts.push(['mode','Mode: ' + FIRE_MODES[raid.mode].label]);
+  acts.push(['aim','Aim +1']);
+  if(p.gun) acts.push(['reload','Reload']);
+  acts.push(['stance', p.stance === 'stand' ? 'Crouch' : p.stance === 'crouch' ? 'Prone' : 'Stand']);
+  const cont = raid.containers.find(c => !c.opened && dist(c.x,c.y,p.x,p.y) <= 1);
+  if(cont) acts.push(['loot','Loot']);
+  if(onExtract) acts.push(['extract','EXTRACT']);
+  acts.push(['end','End turn']);
+  $('actions').innerHTML = acts.map(([k,l]) =>
+    '<button class="btn' + (k==='extract'?' pri':'') + '" data-act="' + k + '">' + l + '</button>').join('');
+
+  let bar = '';
+  for(let i = 0; i < p.maxAp; i++){
+    const filled = i < p.ap;
+    const pending = filled && i >= p.ap - raid.aimAP;
+    bar += '<i class="' + (pending ? 'p' : filled ? 'f' : '') + '"></i>';
+  }
+  $('apBar').innerHTML = bar;
+
+  const log = $('log');
+  log.innerHTML = raid.log.slice(-90).map(l => '<div class="' + l.cls + '">' + esc(l.msg) + '</div>').join('');
+  log.scrollTop = log.scrollHeight;
+}
+
+/* ------------------------------------------------------------------ *
+ *  Raid input                                                         *
+ * ------------------------------------------------------------------ */
+function raidClick(ev){
+  if(!raid || raid.over) return;
+  const r = $('grid').getBoundingClientRect();
+  const [x,y] = screenToTile(ev.clientX - r.left, ev.clientY - r.top);
+  const p = raid.player;
+  if(x < 0 || y < 0 || x >= raid.map.w || y >= raid.map.h) return;
+
+  const tgt = entAt(x,y);
+  if(tgt && tgt.side === 'ai' && raid.visible.has(y*raid.map.w+x)){ playerShoot(tgt); return; }
+
+  const c = raid.containers.find(o => o.x===x && o.y===y && !o.opened);
+  if(c){
+    if(dist(c.x,c.y,p.x,p.y) <= 1) playerLoot(c);
+    else {
+      // walk to a tile beside the container
+      let best = null, bd = 1e9;
+      for(let dy=-1;dy<=1;dy++) for(let dx=-1;dx<=1;dx++){
+        const nx = c.x+dx, ny = c.y+dy;
+        if(BLOCKS_MOVE(raid.map.at(nx,ny)) || occupied(nx,ny)) continue;
+        const d = dist(nx,ny,p.x,p.y);
+        if(d < bd){ bd = d; best = [nx,ny]; }
+      }
+      if(best) playerMoveTo(best[0], best[1]);
+    }
+    return;
+  }
+  if(BLOCKS_MOVE(raid.map.at(x,y))) return;
+  playerMoveTo(x,y);
+}
+function raidHover(ev){
+  if(!raid || raid.over) return;
+  const r = $('grid').getBoundingClientRect();
+  const [x,y] = screenToTile(ev.clientX - r.left, ev.clientY - r.top);
+  raid.hoverTile = [x,y];
+  const hv = $('hover');
+  const p = raid.player;
+  const tgt = entAt(x,y);
+
+  if(tgt && tgt.side === 'ai' && raid.visible.has(y*raid.map.w+x) && p.gun){
+    const d = dist(p.x,p.y,x,y);
+    const los = hasLOS(raid.map, p.x,p.y, x,y);
+    tgt.inCover = inCoverFrom(raid.map, x,y, p.x,p.y);
+    const hc = hitChance(p, tgt, d, raid.aimAP, 0);
+    const armor = tgt.armor ? ITEMS[tgt.armor.id] : null;
+    const helm  = tgt.helmet ? ITEMS[tgt.helmet.id] : null;
+    const ammo  = ITEMS[p.gun.ammo];
+    const pen   = armor ? Math.round(penChance(penAtRange(ammo.pen, ammo.vel, d*METERS_PER_TILE), armor.cls, tgt.armor.dur/armor.dur)*100) : 100;
+    hv.innerHTML = '<div class="hn">' + esc(tgt.name) + '</div>' +
+      Math.round(d*METERS_PER_TILE) + ' m · ' + tgt.stance + (tgt.inCover ? ' · in cover' : '') + '<br>' +
+      (los ? '<span style="color:var(--acc2)">hit ' + Math.round(hc*100) + '%</span>' : '<span style="color:var(--bad)">no line of sight</span>') +
+      '<br>armour: ' + (armor ? 'class ' + armor.cls + ' (' + Math.round(tgt.armor.dur) + '/' + armor.dur + ')' : 'none') +
+      (helm ? ' · helm ' + helm.cls : '') +
+      '<br>your round pens ' + pen + '%' +
+      '<br><span style="color:var(--dim2)">hp ' + Math.round(totalHP(tgt)) + '/' + Math.round(totalMaxHP(tgt)) + '</span>';
+    hv.style.display = 'block';
+    hv.style.left = Math.min(ev.clientX - r.left + 14, r.width - 260) + 'px';
+    hv.style.top  = Math.min(ev.clientY - r.top + 14, r.height - 110) + 'px';
+  } else {
+    hv.style.display = 'none';
+  }
+  drawRaid();
+}
+function raidKey(ev){
+  if(!raid || raid.over || screenName !== 'raid') return;
+  const p = raid.player;
+  const k = ev.key.toLowerCase();
+  const step = { arrowup:[0,-1], w:[0,-1], arrowdown:[0,1], s:[0,1], arrowleft:[-1,0], a2:[-1,0], arrowright:[1,0], d:[1,0] };
+  if(k === '1') return playerStance('stand');
+  if(k === '2') return playerStance('crouch');
+  if(k === '3') return playerStance('prone');
+  if(k === 'r') return playerReload();
+  if(k === 'f') return cycleMode();
+  if(k === 'q') return addAim();
+  if(k === 'e') return tryExtract();
+  if(k === ' '){ ev.preventDefault(); return endPlayerTurn(); }
+  if(step[k]){
+    const [dx,dy] = step[k];
+    ev.preventDefault();
+    const nx = p.x+dx, ny = p.y+dy;
+    if(!BLOCKS_MOVE(raid.map.at(nx,ny)) && !occupied(nx,ny)) playerMoveTo(nx,ny);
+  }
+}
+function cycleMode(){
+  const modes = raid.player.gun ? raid.player.gun.modes : ['single'];
+  raid.mode = modes[(modes.indexOf(raid.mode) + 1) % modes.length];
+  render();
+}
+function addAim(){
+  const p = raid.player;
+  const fm = FIRE_MODES[raid.mode];
+  const base = (p.gun ? p.gun.apShot + fm.apAdd + (p.gun.boltAP||0) : 2);
+  if(raid.aimAP >= 3){ raid.aimAP = 0; render(); return; }
+  if(p.ap < base + raid.aimAP + 1){ rlog('Not enough action points to aim further.', 'sys'); render(); return; }
+  raid.aimAP++;
+  render();
+}
+
+/* ------------------------------------------------------------------ *
+ *  After-action report                                                *
+ * ------------------------------------------------------------------ */
+function showAfterAction(survived, xp, gained){
+  const p = raid.player;
+  let h = '<h2 style="color:' + (survived ? 'var(--good)' : 'var(--bad)') + '">' +
+          (survived ? 'EXTRACTED' : 'KILLED IN ACTION') + '</h2>' +
+          '<div class="sub">' + raid.def.name + ' · ' + raid.turn + ' turns · ' + raid.kills.length + ' eliminated</div>';
+
+  if(survived){
+    h += '<h3>Brought home</h3>';
+    if(gained.length){
+      let worth = 0;
+      for(const g of gained){
+        const it = ITEMS[g.id];
+        worth += (it.price||0) * g.n;
+        h += '<div class="mrow"><span>' + esc(it.name) + (g.n>1?' ×'+g.n:'') + '</span><span>₽' + money((it.price||0)*g.n) + '</span></div>';
+      }
+      h += '<div class="mrow" style="border-top:1px solid var(--line2);margin-top:4px"><span><b>Total</b></span><span style="color:var(--gold)"><b>₽' + money(worth) + '</b></span></div>';
+    } else {
+      h += '<div class="empty">You came back empty-handed.</div>';
+    }
+  } else {
+    h += '<h3>Lost</h3>';
+    const lost = [];
+    if(p.gun) lost.push(p.gun.name);
+    for(const s of ['armor','helmet','rig']) if(p[s]) lost.push(ITEMS[p[s].id].name);
+    if(p.spareMags) lost.push(p.spareMags + ' magazines');
+    for(const m of p.meds) lost.push(ITEMS[m.id].name);
+    const bagWorth = raid.bag.reduce((a,b)=>a+(ITEMS[b.id].price||0)*b.n,0);
+    if(raid.bag.length) lost.push(raid.bag.length + ' looted items (₽' + money(bagWorth) + ')');
+    h += lost.map(l => '<div class="mrow"><span>' + esc(l) + '</span><span style="color:var(--bad)">gone</span></div>').join('')
+         || '<div class="empty">Nothing of value.</div>';
+  }
+
+  if(raid.kills.length){
+    h += '<h3 style="margin-top:14px">Eliminated</h3>';
+    const byType = {};
+    for(const k of raid.kills) byType[k.name] = (byType[k.name]||0)+1;
+    for(const n in byType) h += '<div class="mrow"><span>' + esc(n) + '</span><span>×' + byType[n] + '</span></div>';
+  }
+  h += '<div class="mrow" style="margin-top:12px"><span>Experience</span><span style="color:var(--acc2)">+' + money(xp) + '</span></div>';
+  h += '<div class="mrow"><span>Level</span><span>' + G.level + '</span></div>';
+  h += '<div class="mactions"><button class="btn pri" id="aarClose">Return to stash</button></div>';
+  modal(h);
+}
+
+/* ------------------------------------------------------------------ *
+ *  Event wiring                                                       *
+ * ------------------------------------------------------------------ */
+function wire(){
+  $('nav').addEventListener('click', e => {
+    const b = e.target.closest('button[data-scr]');
+    if(b && !b.disabled) switchScreen(b.dataset.scr);
+  });
+  $('wipeBtn').addEventListener('click', () => {
+    modal('<h2>Wipe progress</h2><div class="sub">This deletes your stash, weapons, roubles and task progress. It cannot be undone.</div>' +
+          '<div class="mactions"><button class="btn" onclick="closeModal()">Cancel</button>' +
+          '<button class="btn danger" id="wipeYes">Wipe everything</button></div>');
+  });
+
+  // stash
+  $('scr-stash').addEventListener('click', e => {
+    const f = e.target.closest('[data-f]');
+    if(f){ ui.stashFilter = f.dataset.f; render(); return; }
+    const r = e.target.closest('[data-sel]');
+    if(r){ ui.stashSel = r.dataset.sel; render(); return; }
+    if(e.target.id === 'toBench'){
+      ui.benchGun = ui.stashSel.slice(4);
+      switchScreen('bench');
+    }
+  });
+
+  // workbench
+  $('scr-bench').addEventListener('click', e => {
+    const g = e.target.closest('[data-gun]');
+    if(g){ ui.benchGun = g.dataset.gun; render(); return; }
+    const s = e.target.closest('[data-slot]');
+    if(s){
+      // a slot with nothing legal still opens, so the reason is visible
+      const gun = G.guns.find(x => x.uid === ui.benchGun);
+      if(gun) openSlotModal(gun, s.dataset.slot);
+      return;
+    }
+    if(e.target.id === 'renameGun'){
+      const gun = G.guns.find(x => x.uid === ui.benchGun);
+      modal('<h2>Rename</h2><input type="text" id="gunName" value="' + esc(gun.name) + '" style="width:100%;margin-top:8px">' +
+            '<div class="mactions"><button class="btn" onclick="closeModal()">Cancel</button><button class="btn pri" id="gunNameOk">Save</button></div>');
+      setTimeout(() => { const i = $('gunName'); if(i){ i.focus(); i.select(); } }, 30);
+    }
+  });
+  $('scr-bench').addEventListener('change', e => {
+    if(e.target.id === 'ammoSel'){
+      const gun = G.guns.find(x => x.uid === ui.benchGun);
+      gun.ammo = e.target.value;
+      save(); render();
+    }
+  });
+
+  // modal delegation
+  $('modalBox').addEventListener('click', e => {
+    const inst = e.target.closest('[data-install]');
+    if(inst){
+      const gun = G.guns.find(x => x.uid === ui.benchGun);
+      if(gun) installMod(gun, ui.benchSlot, inst.dataset.install);
+      return;
+    }
+    if(e.target.id === 'wipeYes'){
+      localStorage.removeItem(SAVE_KEY);
+      G = newSave();
+      raid = null;
+      closeModal();
+      switchScreen('stash');
+      return;
+    }
+    if(e.target.id === 'gunNameOk'){
+      const gun = G.guns.find(x => x.uid === ui.benchGun);
+      const v = $('gunName').value.trim();
+      if(gun && v) gun.name = v.slice(0,32);
+      save(); closeModal(); render();
+      return;
+    }
+    if(e.target.id === 'aarClose'){
+      raid = null;
+      closeModal();
+      switchScreen('stash');
+      return;
+    }
+  });
+
+  // traders
+  $('scr-trader').addEventListener('click', e => {
+    const t = e.target.closest('[data-tr]');
+    if(t){ ui.trader = t.dataset.tr; render(); return; }
+    const b = e.target.closest('[data-buy]');
+    if(b){ doBuy(b.dataset.buy); return; }
+    const s = e.target.closest('[data-sell]');
+    if(s){ doSell(s.dataset.sell); return; }
+    const sg = e.target.closest('[data-sellgun]');
+    if(sg){ doSellGun(sg.dataset.sellgun); return; }
+  });
+
+  // tasks
+  $('scr-quests').addEventListener('click', e => {
+    const c = e.target.closest('[data-claim]');
+    if(c){ claimQuest(QUESTS.find(q => q.id === c.dataset.claim)); render(); }
+  });
+
+  // deploy
+  $('scr-deploy').addEventListener('click', e => {
+    const m = e.target.closest('[data-mag]');
+    if(m){
+      const lo = ensureLoadout();
+      const gun = G.guns.find(g => g.uid === lo.gun);
+      const gs = gun ? resolveWeapon(gun) : null;
+      const maxMags = gs ? Math.max(0, Math.floor(stashCount(G, gs.ammo)/gs.mag) - 1) : 0;
+      lo.mags = clamp(lo.mags + (+m.dataset.mag), 0, Math.min(8, maxMags));
+      save(); render(); return;
+    }
+    const md = e.target.closest('[data-med]');
+    if(md){
+      const lo = ensureLoadout();
+      const v = md.dataset.med, id = v.slice(1), sign = v[0];
+      const cap = lo.rig ? ITEMS[findStash(G, lo.rig).id].cap : 2;
+      if(sign === '+'){
+        const owned = G.stash.filter(x => x.id === id).reduce((a,x)=>a+x.n,0);
+        if(lo.meds.length < cap && lo.meds.filter(x=>x===id).length < owned) lo.meds.push(id);
+      } else {
+        const i = lo.meds.indexOf(id);
+        if(i >= 0) lo.meds.splice(i,1);
+      }
+      save(); render(); return;
+    }
+    const mp = e.target.closest('[data-map]');
+    if(mp){ ensureLoadout().map = mp.dataset.map; save(); render(); return; }
+    if(e.target.id === 'deployBtn'){ doDeploy(); return; }
+  });
+  $('scr-deploy').addEventListener('change', e => {
+    const lo = ensureLoadout();
+    if(e.target.id === 'loGun'){ lo.gun = e.target.value || null; lo.mags = 2; }
+    else if(e.target.dataset.slot) lo[e.target.dataset.slot] = e.target.value || null;
+    save(); render();
+  });
+
+  // raid
+  $('grid').addEventListener('click', raidClick);
+  $('grid').addEventListener('mousemove', raidHover);
+  $('grid').addEventListener('mouseleave', () => {
+    if(raid){ raid.hoverTile = null; $('hover').style.display = 'none'; drawRaid(); }
+  });
+  $('raidSide').addEventListener('click', e => {
+    const a = e.target.closest('[data-act]');
+    if(a){
+      const k = a.dataset.act;
+      if(k === 'mode') cycleMode();
+      else if(k === 'aim') addAim();
+      else if(k === 'reload') playerReload();
+      else if(k === 'stance'){
+        const p = raid.player;
+        playerStance(p.stance === 'stand' ? 'crouch' : p.stance === 'crouch' ? 'prone' : 'stand');
+      }
+      else if(k === 'loot'){
+        const c = raid.containers.find(c => !c.opened && dist(c.x,c.y,raid.player.x,raid.player.y) <= 1);
+        if(c) playerLoot(c);
+      }
+      else if(k === 'extract') tryExtract();
+      else if(k === 'end') endPlayerTurn();
+      return;
+    }
+    const m = e.target.closest('[data-med-use]');
+    if(m) playerUseMed(+m.dataset.medUse);
+  });
+
+  document.addEventListener('keydown', raidKey);
+  window.addEventListener('resize', () => { if(screenName === 'raid'){ sizeCanvas(); drawRaid(); } });
+}
+
+/* Remember which slot the modal is editing. */
+const _openSlotModal = openSlotModal;
+openSlotModal = function(g, slot){ ui.benchSlot = slot; _openSlotModal(g, slot); };
+
+/* ------------------------------------------------------------------ *
+ *  Test surface                                                       *
+ * ------------------------------------------------------------------ */
+window.__sim = {
+  ITEMS, AMMO, MODS, PLATFORMS, ARMOR, MAPS, QUESTS,
+  get G(){ return G; }, get raid(){ return raid; },
+  resolveWeapon, canInstall, newGun, penChance, penAtRange, hitChance, effectiveRange,
+  installedParts, providedSet, FIRE_MODES, RNG, generateMap, startRaid, ENEMY_TYPES,
+
+  /* Empirical penetration rate over many rolls. */
+  penRate(ammoId, cls, durFrac, metres, n){
+    n = n || 10000;
+    const a = ITEMS[ammoId];
+    const R = RNG(12345);
+    let hits = 0;
+    const p = penAtRange(a.pen, a.vel, metres || 0);
+    for(let i=0;i<n;i++) if(R.chance(penChance(p, cls, durFrac === undefined ? 1 : durFrac))) hits++;
+    return hits/n;
+  },
+  /* Every platform must have at least one legal, complete configuration. */
+  auditPlatforms(){
+    return PLATFORMS.map(p => {
+      const g = newGun(p.id);
+      const s = resolveWeapon(g);
+      const slots = {};
+      for(const sl of p.slots) slots[sl] = modsForSlot(g, sl).filter(o => canInstall(g, o.mod).ok).length;
+      return { id:p.id, ergo:s.ergo, rv:s.rv, moa:s.moa, mag:s.mag, eff:effectiveRange(s), slots };
+    });
+  },
+  /* Fully kit a platform out with the best legal part in every slot. */
+  bestBuild(platId){
+    const g = newGun(platId);
+    const p = ITEMS[platId];
+    // rails first, so optics and grips have something to mount to
+    for(const pass of [['handguard','dustcover','mount','barrel','stock','pistolgrip','gasblock'],
+                       ['optic','foregrip','muzzle','tactical','mag']]){
+      for(const slot of pass){
+        if(!p.slots.includes(slot)) continue;
+        const opts = MODS.filter(m => m.slot === slot && canInstall(g, m).ok);
+        if(!opts.length) continue;
+        let best = opts[0], bestScore = -1e9;
+        for(const m of opts){
+          const t = { plat:g.plat, mods:Object.assign({}, g.mods, { [slot]:m.id }), ammo:g.ammo };
+          const s = resolveWeapon(t);
+          const score = s.ergo*2 - s.rv*0.35 - s.moa*14 + s.sight*0.28 - s.weight*4;
+          if(score > bestScore){ bestScore = score; best = m; }
+        }
+        g.mods[slot] = best.id;
+      }
+    }
+    return { gun:g, stats:resolveWeapon(g) };
+  },
+  /* Auto-play raids headlessly to sanity-check survival rates. */
+  autoRaid(mapId, n, opts){
+    opts = opts || {};
+    const results = { runs:0, survived:0, died:0, kills:0, turns:0 };
+    const savedG = JSON.stringify(G);
+    for(let i=0;i<n;i++){
+      G = newSave();
+      const gun = opts.build ? window.__sim.bestBuild(opts.build).gun : G.guns[0];
+      if(opts.build) G.guns = [gun];
+      if(opts.ammo) gun.ammo = opts.ammo;
+      stashAdd(G, gun.ammo, 400);
+      const armor  = G.stash.find(e => ITEMS[e.id].type === 'armor');
+      const helmet = G.stash.find(e => ITEMS[e.id].type === 'helmet');
+      const lo = { gun:gun.uid, gunObj:gun, mags:4, map:mapId, rig:null,
+                   meds:['m_bandage','m_ai2'],
+                   armor: armor ? armor.uid : null, helmet: helmet ? helmet.uid : null };
+      startRaid(mapId, lo);
+      let guard = 0;
+      while(!raid.over && guard++ < 220){
+        const p = raid.player;
+        const foes = raid.ents.filter(e => e.alive && e.side==='ai' && raid.visible.has(e.y*raid.map.w+e.x)
+                                        && hasLOS(raid.map, p.x,p.y, e.x,e.y));
+        if(foes.length && p.magLoaded > 0){
+          foes.sort((a,b)=>dist(p.x,p.y,a.x,a.y)-dist(p.x,p.y,b.x,b.y));
+          // pick a fire mode for the range, the way a player would
+          const d0 = dist(p.x,p.y,foes[0].x,foes[0].y);
+          const modes = p.gun.modes;
+          raid.mode = modes.includes('auto') && d0 < 7 ? 'auto'
+                    : modes.includes('burst') && d0 < 13 ? 'burst' : 'single';
+          const fm = FIRE_MODES[raid.mode];
+          if(p.ap >= p.gun.apShot + fm.apAdd) { playerShoot(foes[0]); continue; }
+        }
+        if(p.magLoaded <= 0 && p.spareMags > 0 && p.ap >= p.gun.apReload){ playerReload(); continue; }
+        // patch up between contacts, the way a player would
+        if(!foes.length && p.meds.length && p.ap >= 3 &&
+           (p.effects.bleeds.length || totalHP(p) < totalMaxHP(p)*0.6)){ playerUseMed(0); continue; }
+        if(p.ap > 0 && !foes.length){
+          const ex = raid.extracts[0];
+          const step = findPath(raid.map, p.x,p.y, ex.x,ex.y, (x,y)=>occupied(x,y), 3000);
+          if(step && step.length){ playerMoveTo(step[Math.min(3,step.length-1)][0], step[Math.min(3,step.length-1)][1]); continue; }
+        }
+        if(raid.over) break;
+        endPlayerTurn();
+      }
+      results.runs++;
+      if(raid && raid.result === 'extracted') results.survived++; else results.died++;
+      if(raid){ results.kills += raid.kills.length; results.turns += raid.turn; }
+      raid = null;
+    }
+    G = JSON.parse(savedG);
+    results.survivalRate = results.survived / results.runs;
+    results.avgKills = results.kills / results.runs;
+    results.avgTurns = results.turns / results.runs;
+    return results;
+  },
+};
+
+/* ------------------------------------------------------------------ *
+ *  Boot                                                               *
+ * ------------------------------------------------------------------ */
+function boot(){
+  G = load();
+  refreshLevel();
+  // keep unique-id generation ahead of anything restored from disk
+  for(const e of G.stash){ const n = parseInt(String(e.uid).slice(1)); if(n >= uidCounter) uidCounter = n+1; }
+  wire();
+  switchScreen('stash');
+  window.__ready = true;
+}
+if(document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot);
+else boot();
+
+</script>
+</body>
+</html>
