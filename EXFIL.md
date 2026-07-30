@@ -1,93 +1,119 @@
-# EXFIL — a turn-based tactical extraction roguelike
+# EXFIL
 
-Open `exfil.html` in any browser. One file, no dependencies, no build step.
-Progress saves to `localStorage`.
+Two self-contained games in this repo. One file each, no dependencies, no build
+step — open in a browser. Progress saves to `localStorage`.
 
-An original game, mechanically inspired by the extraction-shooter genre.
+| File | What it is |
+|---|---|
+| **`exfil-fps.html`** | **First-person extraction shooter.** Real-time, mouse-look, raw WebGL2. The main game. |
+| `exfil.html` | The earlier turn-based tactical version, same systems on a grid. |
+
+Original games, mechanically inspired by the extraction-shooter genre.
+
+---
 
 ## The loop
 
 Build a weapon → assemble a loadout → deploy → fight or evade → reach an extract.
 
-**Anything you carry into a raid can be lost.** Die and your weapon, armour, rig,
+**Anything you carry in can be lost.** Die and your weapon, armour, rig,
 magazines, medical kit and everything you looted are gone. Anything left in the
-stash is safe. Extract and you keep all of it.
-
-## Weapon configuration
-
-The centrepiece. Ten platforms, ~85 attachments, twelve slots, and compatibility
-that actually bites:
-
-- An optic needs a **rail**, which comes from a railed dust cover, a rail
-  handguard, or a side mount. A stock AKM has none, so the optic slot is empty
-  until you buy one.
-- A suppressor needs a **threaded barrel**. The cheap unthreaded barrel cannot
-  take one.
-- A foregrip needs a **lower rail**.
-- Remove the part that provided a rail and anything mounted to it comes off too.
-
-Every part feeds the combat resolver:
-
-| Stat | What it does in a raid |
-|---|---|
-| Ergonomics | Action points per shot and per reload, and baseline accuracy |
-| Vertical / horizontal recoil | How fast accuracy decays across a burst |
-| Dispersion (MOA) | Spread at range |
-| Sight range / magnification | How far you can shoot before accuracy collapses |
-| Muzzle velocity | Penetration retained at distance |
-| Weight | Action points per turn |
-| Noise | How far a shot pulls hostiles toward you |
-
-## Ballistics and armour
-
-31 cartridges across six calibres, each with damage, penetration power, armour
-damage, fragmentation chance and muzzle velocity.
-
-Armour has a class and a durability value, and **worn plates stop less** — a
-battered class 6 plate performs closer to a fresh class 2. Penetration is rolled
-against the plate's class scaled by its remaining durability. A stopped round
-still delivers blunt damage through the plate.
-
-Seven body parts with independent health. Head or thorax to zero is death. A
-blacked arm wrecks your accuracy and slows reloads; a blacked leg costs movement.
-Wounds bleed, legs fracture, and only the right medical item fixes each one.
-
-The workbench shows your loaded round's penetration chance against every armour
-class at 25 m, 75 m and 150 m, so the choice is informed rather than guessed.
+stash is safe.
 
 ## Controls
 
-Click to move, click a hostile to fire, click a container to loot.
+Click the view to capture the mouse.
 
-| Key | Action |
+| Input | Action |
 |---|---|
-| `1` `2` `3` | Stand / crouch / prone — lower stances are steadier *and* harder to spot |
-| `Q` | Spend an action point aiming (up to +3) |
-| `F` | Cycle fire mode |
+| `W A S D` | Move |
+| Mouse | Look · left fires · **right aims down sights** |
+| `Shift` | Sprint |
+| `C` / `Z` | Crouch · prone — steadier *and* harder to be seen |
+| `Space` | Jump |
 | `R` | Reload |
-| `E` | Extract, when standing on an exit |
-| `Space` | End turn |
-| `WASD` / arrows | Step one tile |
+| `F` | Fire mode |
+| `E` | Search a container |
+| `H` | Use whichever medical item actually treats what's wrong |
+| `Esc` | Pause, and mouse sensitivity |
 
-Hovering a hostile shows the real hit chance, their armour class and remaining
-durability, and whether your current round will get through it.
+## Ballistics
+
+Rounds are **simulated projectiles**, not hitscan. Each one leaves the muzzle at
+the weapon's real muzzle velocity, travels, and falls under gravity — so at
+distance you lead and hold over. A 9x19 subsonic drops roughly six times as far
+as 5.56 over the same 100 m.
+
+Hits are resolved against **seven per-limb hitboxes**, not a probability table.
+Where the round passes through the body is where it lands: a high shot over a
+crouching target misses entirely, and a head shot is a head shot because the
+geometry says so.
+
+Armour has a class and a durability value, and **worn plates stop less** — a
+battered class 6 plate performs closer to a fresh class 2. Penetration is rolled
+against class scaled by remaining durability, and a stopped round still delivers
+blunt damage. Head or thorax to zero is death. A destroyed arm wrecks your hold;
+a destroyed leg slows you. Wounds bleed on the clock, legs fracture, and only the
+right item fixes each one.
+
+## Weapon configuration
+
+Ten platforms, ~85 attachments, twelve slots, with compatibility that bites:
+
+- An optic needs a **rail** — from a railed dust cover, a rail handguard, or a
+  side mount. A stock AKM has none, so the optic slot stays empty until you buy one.
+- A suppressor needs a **threaded barrel**. The cheap unthreaded barrel won't take one.
+- A foregrip needs a **lower rail**.
+- Remove the part that provided a rail and anything mounted to it comes off too.
+
+Every part drives how the gun actually behaves:
+
+| Stat | What it does |
+|---|---|
+| Ergonomics | How fast the sights come up, and how much the weapon sways |
+| Vertical / horizontal recoil | Degrees of climb per round, which you fight during a burst |
+| Dispersion (MOA) | The cone your rounds leave in |
+| Sight range / magnification | Field of view when aimed, and how far you can identify |
+| Muzzle velocity | Travel time, drop, and penetration retained at range |
+| Weight | Movement speed |
+| Noise | How far a shot pulls hostiles toward you |
+
+Recoil is applied to your view and settles back at a rate set by ergonomics — a
+long burst walks off target unless you build the gun to hold it or pull down.
+
+The workbench shows time-to-aim, recoil per shot, drop at 100 m, and your loaded
+round's penetration chance against every armour class at 25/75/150 m.
+
+## Hostiles
+
+Scavs, scav snipers, raiders, and a boss with guards. Each has a detection range,
+a **reaction time** before the first shot, and an aiming error in degrees — that
+error is the whole of the difficulty. They fire the same projectile system you do,
+so their rounds travel, drop, and can miss.
+
+The turn a hostile first acquires you is spent getting into position, not
+shooting. That window is your chance to break contact — and if you do break line
+of sight, they search for a few seconds and then lose you. Unsuppressed gunfire
+pulls in everything within earshot.
 
 ## Maps
 
 | Map | Level | Character |
 |---|---|---|
-| Factory | 1 | Tight industrial interior, contact is close and immediate |
-| Customs | 1 | Warehouses and lanes, plenty to loot |
-| Woods | 3 | Long sightlines that punish iron sights |
-| The Lab | 8 | Raiders in body armour, the best loot, a key-locked exit |
+| Factory | 1 | Enclosed plant, contact inside 30 m |
+| Customs | 1 | Warehouses and lanes, the most to loot |
+| Woods | 3 | Open treeline, engagements past 100 m |
+| The Lab | 8 | Armoured raiders, best loot, key-locked exit |
 
-Maps are generated fresh every raid.
+Levels are generated fresh every raid and extruded into 3D from a grid.
 
-## Notes
+## Requirements
 
-Hostiles get one turn of reaction time when they first spot you — that window is
-your chance to break contact. Break line of sight and they will search for a few
-turns, then lose you. Unsuppressed gunfire pulls everything within earshot.
+WebGL2, and a keyboard and mouse — it needs a pointer it can capture, so it will
+not play on a touchscreen. The menus, workbench and traders work anywhere.
 
-Testing hooks live on `window.__sim` — penetration rate sampling, platform
-audits, automatic build optimisation, and headless auto-played raids.
+## Testing hooks
+
+`window.__sim` exposes the combat maths for headless testing: penetration-rate
+sampling, per-limb hitbox tracing, platform audits, automatic build optimisation,
+and `autoRaid()`, which runs full raids with no renderer at a fixed timestep.

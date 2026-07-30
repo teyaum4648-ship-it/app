@@ -1,0 +1,3642 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>EXFIL — First-Person Extraction</title>
+<style>
+:root{
+  --bg:#0d0f0e; --bg2:#141817; --panel:#191e1c; --panel2:#202623;
+  --line:#2c3531; --line2:#3a453f;
+  --txt:#c9d1cb; --dim:#7d8a82; --dim2:#5b665f;
+  --acc:#9db668; --acc2:#c2d98a; --warn:#d99a4e; --bad:#c1533f; --good:#6fa87c;
+  --gold:#c9a961;
+  --mono:ui-monospace,'SF Mono',Menlo,Consolas,'DejaVu Sans Mono',monospace;
+}
+*{box-sizing:border-box}
+html,body{margin:0;padding:0;height:100%;overflow:hidden}
+body{background:var(--bg);color:var(--txt);font-family:var(--mono);font-size:13px;line-height:1.45;-webkit-font-smoothing:antialiased}
+button{font-family:inherit;font-size:inherit;color:inherit;background:none;border:none;cursor:pointer}
+::-webkit-scrollbar{width:9px;height:9px}
+::-webkit-scrollbar-track{background:var(--bg2)}
+::-webkit-scrollbar-thumb{background:var(--line2)}
+::-webkit-scrollbar-thumb:hover{background:var(--dim2)}
+#app{display:flex;flex-direction:column;height:100vh;height:100dvh}
+
+/* ---------- top bar ---------- */
+#topbar{display:flex;align-items:center;gap:14px;padding:0 14px;height:44px;flex:0 0 44px;background:var(--bg2);border-bottom:1px solid var(--line)}
+#brand{font-weight:700;letter-spacing:3px;color:var(--acc);font-size:15px}
+#brand small{color:var(--dim2);letter-spacing:1px;font-size:9px;display:block;line-height:1;margin-top:-2px}
+.nav{display:flex;gap:2px;margin-left:8px}
+.nav button{padding:6px 13px;color:var(--dim);border:1px solid transparent;letter-spacing:1px;font-size:11px;text-transform:uppercase}
+.nav button:hover{color:var(--txt);background:var(--panel)}
+.nav button.on{color:var(--acc2);background:var(--panel);border-color:var(--line2)}
+.nav button:disabled{opacity:.3;cursor:not-allowed}
+#stats{margin-left:auto;display:flex;gap:16px;align-items:center;font-size:11px}
+#stats b{color:var(--gold);font-weight:600}
+#stats .lv{color:var(--acc2)}
+
+/* ---------- screens ---------- */
+#screens{flex:1;overflow:hidden;position:relative}
+.screen{position:absolute;inset:0;overflow:auto;padding:16px;display:none}
+.screen.on{display:block}
+.screen.flexcol{display:none;flex-direction:column}
+.screen.flexcol.on{display:flex}
+h2{margin:0 0 3px;font-size:14px;letter-spacing:2px;text-transform:uppercase;color:var(--acc2);font-weight:600}
+h3{margin:0 0 8px;font-size:11px;letter-spacing:1.5px;text-transform:uppercase;color:var(--dim);font-weight:600}
+.sub{color:var(--dim2);font-size:11px;margin-bottom:14px}
+.cols{display:grid;gap:12px}
+.panel{background:var(--panel);border:1px solid var(--line);padding:12px}
+.panel.tight{padding:8px}
+
+.row{display:flex;align-items:center;gap:9px;padding:5px 8px;border:1px solid transparent;cursor:pointer}
+.row:hover{background:var(--panel2);border-color:var(--line2)}
+.row.sel{background:var(--panel2);border-color:var(--acc)}
+.row .nm{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.row .meta{color:var(--dim2);font-size:10px;flex:0 0 auto}
+.row .price{color:var(--gold);font-size:11px;flex:0 0 auto}
+.tag{display:inline-block;padding:0 5px;font-size:9px;letter-spacing:.5px;border:1px solid var(--line2);color:var(--dim);text-transform:uppercase}
+.tag.w{border-color:#4a5a3a;color:var(--acc)}
+.tag.a{border-color:#5a4a3a;color:var(--warn)}
+.tag.m{border-color:#3a4a5a;color:#7d9ab5}
+.tag.med{border-color:#5a3a3a;color:#c98080}
+.tag.l{border-color:#4a4a3a;color:var(--gold)}
+.tag.k{border-color:#5a3a5a;color:#b580b5}
+.empty{color:var(--dim2);padding:16px 8px;text-align:center;font-size:11px}
+
+.btn{padding:7px 14px;border:1px solid var(--line2);background:var(--panel2);color:var(--txt);letter-spacing:1px;font-size:11px;text-transform:uppercase}
+.btn:hover{border-color:var(--acc);color:var(--acc2)}
+.btn:disabled{opacity:.32;cursor:not-allowed;border-color:var(--line)!important;color:var(--dim2)!important}
+.btn.pri{background:#2b3a22;border-color:#4d6b39;color:var(--acc2)}
+.btn.pri:hover{background:#35492a;border-color:var(--acc)}
+.btn.danger{border-color:#5a3230;color:#c98070}
+.btn.danger:hover{border-color:var(--bad);color:var(--bad)}
+.btn.sm{padding:3px 9px;font-size:10px}
+
+.statline{display:flex;align-items:center;gap:8px;margin:3px 0;font-size:11px}
+.statline .k{flex:0 0 118px;color:var(--dim)}
+.statline .bar{flex:1;height:7px;background:var(--bg);border:1px solid var(--line);position:relative;overflow:hidden}
+.statline .bar i{position:absolute;left:0;top:0;bottom:0;background:var(--acc);display:block}
+.statline .v{flex:0 0 72px;text-align:right;color:var(--txt);font-variant-numeric:tabular-nums}
+.delta{font-size:10px;margin-left:4px}
+.delta.up{color:var(--good)} .delta.down{color:var(--bad)}
+
+#wbWrap{display:grid;grid-template-columns:210px 1fr 290px;gap:12px;height:100%;min-height:0}
+#wbWrap>div{overflow:auto;min-height:0}
+.slot{border:1px solid var(--line);margin-bottom:4px;padding:6px 9px;cursor:pointer;display:flex;align-items:center;gap:8px;background:var(--panel)}
+.slot:hover{border-color:var(--line2);background:var(--panel2)}
+.slot .sn{flex:0 0 74px;color:var(--dim2);font-size:9px;letter-spacing:1px;text-transform:uppercase}
+.slot .sv{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:11px}
+.slot .sv.none{color:var(--dim2);font-style:italic}
+.slot.locked{opacity:.5}
+.slot.locked:hover{opacity:.8}
+.reqnote{color:var(--warn);font-size:10px;padding:4px 9px;background:#241d12;border:1px solid #443320;margin-bottom:6px}
+.gunhdr{display:flex;align-items:baseline;gap:10px;margin-bottom:8px;flex-wrap:wrap}
+.gunhdr .gn{font-size:15px;color:var(--acc2);letter-spacing:1px}
+.gunhdr .gc{color:var(--dim);font-size:11px}
+
+#modal{position:absolute;inset:0;background:#05070699;display:none;align-items:center;justify-content:center;z-index:50;padding:20px}
+#modal.on{display:flex}
+#modalBox{background:var(--panel);border:1px solid var(--line2);padding:20px;max-width:620px;width:100%;max-height:88%;overflow:auto}
+.mrow{display:flex;justify-content:space-between;padding:3px 0;border-bottom:1px solid var(--line);font-size:12px}
+.mrow:last-child{border:none}
+.mactions{display:flex;gap:8px;margin-top:16px;justify-content:flex-end}
+.scroll{max-height:100%;overflow-y:auto}
+.kv{display:flex;justify-content:space-between;font-size:11px;padding:2px 0;color:var(--dim)}
+.kv b{color:var(--txt);font-weight:400}
+.hr{height:1px;background:var(--line);margin:9px 0}
+.pill{display:inline-block;padding:1px 6px;border:1px solid var(--line2);font-size:10px;color:var(--dim);margin:0 3px 3px 0}
+.pill.on{border-color:var(--acc);color:var(--acc2)}
+select,input[type=text]{background:var(--bg);color:var(--txt);border:1px solid var(--line2);padding:4px 6px;font-family:inherit;font-size:11px}
+.warnbox{border:1px solid #4a3320;background:#221a10;color:var(--warn);padding:7px 10px;font-size:11px;margin-bottom:10px}
+.okbox{border:1px solid #2c4432;background:#141d17;color:var(--good);padding:7px 10px;font-size:11px;margin-bottom:10px}
+
+/* ==================== THE GAME VIEW ==================== */
+#scr-raid{padding:0;overflow:hidden}
+#view{display:block;width:100%;height:100%;cursor:none;background:#0a0c0b}
+#hud{position:absolute;inset:0;pointer-events:none;user-select:none;font-size:12px}
+
+/* crosshair grows and shrinks with the actual cone of fire */
+#cross{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);
+  border:1.5px solid #d8e0cf;border-radius:50%;opacity:.8;
+  box-shadow:0 0 0 1px #00000066, inset 0 0 0 1px #00000055;transition:opacity .12s}
+#crossdot{position:absolute;left:50%;top:50%;width:2px;height:2px;transform:translate(-50%,-50%);background:#e8f0dd;box-shadow:0 0 2px #000}
+#hitmark{position:absolute;left:50%;top:50%;width:16px;height:16px;transform:translate(-50%,-50%) rotate(45deg);
+  border:2px solid #e8e2d2;opacity:0;transition:opacity .09s}
+#hurt{position:absolute;inset:0;opacity:0;transition:opacity .2s;
+  background:radial-gradient(ellipse at center, #00000000 42%, #8e2a1ecc 100%)}
+#scope{position:absolute;inset:0;opacity:0;transition:opacity .1s;
+  background:radial-gradient(circle at center, #00000000 0, #00000000 26%, #000000 30%, #000 100%)}
+#scope::after{content:'';position:absolute;left:50%;top:50%;width:1px;height:44%;transform:translate(-50%,-50%);background:#00000088}
+#scope::before{content:'';position:absolute;left:50%;top:50%;width:44%;height:1px;transform:translate(-50%,-50%);background:#00000088}
+
+#ammo{position:absolute;right:22px;bottom:18px;text-align:right;text-shadow:0 1px 3px #000}
+#ammo b{font-size:34px;color:#e6ecdd;font-weight:600;letter-spacing:1px;line-height:1}
+#ammo span{font-size:15px;color:#a8b3a4;margin-left:5px}
+#ammo i{display:block;font-style:normal;font-size:10px;letter-spacing:1.5px;color:var(--acc);margin-top:2px;text-transform:uppercase}
+
+#limbs{position:absolute;left:20px;bottom:18px;width:132px;display:flex;flex-direction:column;gap:2px}
+#limbs .lm{position:relative;height:15px;background:#0c0f0ecc;border:1px solid #2a332e;overflow:hidden;font-size:9px}
+#limbs .lm em{position:absolute;left:0;top:0;bottom:0;background:#33502fcc;font-style:normal}
+#limbs .lm.hurt em{background:#5a4620cc}
+#limbs .lm.crit em{background:#5e2a20cc}
+#limbs .lm.out{opacity:.5}
+#limbs .lm.out em{background:#40201ccc}
+#limbs .lm b{position:relative;z-index:1;font-weight:400;color:#c7cfc3;padding-left:4px;letter-spacing:.5px}
+#limbs .lm u{position:relative;z-index:1;float:right;padding-right:4px;text-decoration:none;color:#e2e8da;font-variant-numeric:tabular-nums}
+
+#status{position:absolute;left:20px;bottom:150px;display:flex;flex-direction:column;gap:3px;align-items:flex-start}
+#status span{background:#1a0f0bcc;border:1px solid #5a3a28;color:var(--warn);padding:1px 7px;font-size:10px;letter-spacing:1px}
+#prompt{position:absolute;left:50%;top:58%;transform:translateX(-50%);color:#dfe6d6;letter-spacing:1px;text-shadow:0 1px 4px #000;font-size:12px}
+#exfil{position:absolute;left:50%;top:22%;transform:translateX(-50%);display:none;background:#0d140fdd;border:1px solid #3d6b47;color:#8fd8a4;padding:7px 20px;letter-spacing:2px;font-size:12px;text-align:center;position:absolute}
+#exfil i{display:block;height:3px;background:#6fd897;margin-top:6px;transition:width .1s}
+#carry{position:absolute;right:22px;top:56px;color:var(--gold);font-size:11px;text-shadow:0 1px 3px #000}
+#clock{position:absolute;right:22px;top:38px;color:#8d978c;font-size:10px;letter-spacing:1px;text-shadow:0 1px 3px #000}
+#rlog{position:absolute;left:20px;top:38px;width:340px;font-size:11px;line-height:1.55;text-shadow:0 1px 3px #000}
+#rlog div{color:#98a294}
+#rlog .dmg{color:#e08070} #rlog .good{color:#8fd8a4} #rlog .warn{color:#e0b070}
+#rlog .big{color:var(--gold)} #rlog .sys{color:#78827a;font-style:italic}
+
+#pause{position:absolute;inset:0;background:#050706dd;display:none;align-items:center;justify-content:center;z-index:40}
+#pause.on{display:flex}
+#pauseBox{background:var(--panel);border:1px solid var(--line2);padding:22px 26px;min-width:330px}
+#pauseBox h2{margin-bottom:12px}
+#pauseBox .kv{padding:3px 0}
+.keyhelp{display:grid;grid-template-columns:auto 1fr;gap:3px 12px;font-size:11px;color:var(--dim);margin:10px 0}
+.keyhelp b{color:var(--acc2);font-weight:400;text-align:right}
+
+#touchwarn{position:absolute;inset:0;background:#050706ee;display:none;align-items:center;justify-content:center;z-index:60;padding:24px;text-align:center}
+#touchwarn.on{display:flex}
+
+@media (max-width:1100px){
+  #wbWrap{grid-template-columns:180px 1fr;grid-template-rows:1fr auto}
+  #wbStats{grid-column:1/-1;max-height:260px}
+}
+@media (max-width:820px){
+  .cols{grid-template-columns:1fr!important}
+  .scroll{max-height:none!important}
+  #stashList{max-height:52vh!important}
+  #traderBuy,#traderSell{max-height:44vh!important}
+  #wbWrap{grid-template-columns:1fr!important;grid-auto-rows:min-content;overflow:auto}
+  #topbar{height:auto;flex:0 0 auto;padding:5px 8px;flex-wrap:wrap;gap:6px}
+  #brand{font-size:13px} #brand small{display:none}
+  #stats{gap:9px;font-size:10px;width:100%;margin-left:0}
+  #stRaids{display:none}
+  .nav{margin-left:0;flex-wrap:wrap}
+  .nav button{padding:5px 8px;font-size:10px}
+  .screen{padding:10px}
+  .statline .k{flex:0 0 92px}
+  #rlog{width:210px}
+}
+</style>
+</head>
+<body>
+<div id="app">
+
+  <div id="topbar">
+    <div id="brand">EXFIL<small>FIRST-PERSON EXTRACTION</small></div>
+    <div class="nav" id="nav">
+      <button data-scr="stash">Stash</button>
+      <button data-scr="bench">Workbench</button>
+      <button data-scr="trader">Traders</button>
+      <button data-scr="quests">Tasks</button>
+      <button data-scr="deploy">Deploy</button>
+    </div>
+    <div id="stats">
+      <span class="lv">LV <b id="stLv">1</b> <span id="stXp" style="color:var(--dim2)"></span></span>
+      <span>₽ <b id="stRub">0</b></span>
+      <span id="stRaids" style="color:var(--dim2)"></span>
+      <button class="btn sm danger" id="wipeBtn" title="Delete save and start over">Wipe</button>
+    </div>
+  </div>
+
+  <div id="screens">
+
+    <div class="screen" id="scr-stash">
+      <h2>Stash</h2>
+      <div class="sub" id="stashSub"></div>
+      <div class="cols" style="grid-template-columns:1fr 320px">
+        <div class="panel tight">
+          <div style="display:flex;gap:4px;margin-bottom:8px;flex-wrap:wrap" id="stashFilters"></div>
+          <div id="stashList" class="scroll" style="max-height:calc(100vh - 210px)"></div>
+        </div>
+        <div>
+          <div class="panel" id="stashDetail"><div class="empty">Select an item</div></div>
+          <div class="panel" style="margin-top:12px"><h3>Character</h3><div id="charPanel"></div></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="screen flexcol" id="scr-bench">
+      <h2>Weapon Workbench</h2>
+      <div class="sub">Every part changes how the weapon behaves in a raid. Ergonomics sets how fast the sights come up, recoil is what you fight during a burst, dispersion and muzzle velocity decide what you can hit at distance.</div>
+      <div id="wbWrap">
+        <div class="panel tight" id="wbGuns"></div>
+        <div class="panel" id="wbSlots"></div>
+        <div class="panel" id="wbStats"></div>
+      </div>
+    </div>
+
+    <div class="screen" id="scr-trader">
+      <h2>Traders</h2>
+      <div class="sub">Loyalty rises with your level and with everything you spend.</div>
+      <div style="display:flex;gap:4px;margin-bottom:10px;flex-wrap:wrap" id="traderTabs"></div>
+      <div class="cols" style="grid-template-columns:1fr 1fr">
+        <div class="panel tight">
+          <h3 style="padding:4px 8px 0">Buying <span style="color:var(--dim2);text-transform:none;letter-spacing:0"> — trader sells</span></h3>
+          <div id="traderBuy" class="scroll" style="max-height:calc(100vh - 250px)"></div>
+        </div>
+        <div class="panel tight">
+          <h3 style="padding:4px 8px 0">Selling <span style="color:var(--dim2);text-transform:none;letter-spacing:0"> — your stash</span></h3>
+          <div id="traderSell" class="scroll" style="max-height:calc(100vh - 250px)"></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="screen" id="scr-quests">
+      <h2>Tasks</h2>
+      <div class="sub">Traders pay for work. Completed tasks raise loyalty and unlock stock.</div>
+      <div id="questList" class="cols" style="grid-template-columns:repeat(auto-fill,minmax(310px,1fr))"></div>
+    </div>
+
+    <div class="screen" id="scr-deploy">
+      <h2>Deploy</h2>
+      <div class="sub">Anything you carry in can be lost. Anything you leave in the stash is safe.</div>
+      <div class="cols" style="grid-template-columns:1fr 330px">
+        <div>
+          <div class="panel"><h3>Loadout</h3><div id="loadoutPanel"></div></div>
+          <div class="panel" style="margin-top:12px"><h3>Location</h3><div id="mapPanel"></div></div>
+        </div>
+        <div class="panel"><h3>Readiness</h3><div id="readyPanel"></div></div>
+      </div>
+    </div>
+
+    <!-- ============ THE RAID ============ -->
+    <div class="screen" id="scr-raid">
+      <canvas id="view"></canvas>
+      <div id="hud">
+        <div id="cross"></div><div id="crossdot"></div>
+        <div id="hitmark"></div>
+        <div id="scope"></div>
+        <div id="hurt"></div>
+        <div id="rlog"></div>
+        <div id="clock"></div>
+        <div id="carry"></div>
+        <div id="exfil"></div>
+        <div id="prompt"></div>
+        <div id="status"></div>
+        <div id="limbs"></div>
+        <div id="ammo"></div>
+      </div>
+
+      <div id="pause"><div id="pauseBox">
+        <h2>Paused</h2>
+        <div class="sub">The raid is still live. Leaving now counts as dying.</div>
+        <div class="keyhelp">
+          <b>W A S D</b><span>Move</span>
+          <b>Mouse</b><span>Look · left fires · right aims</span>
+          <b>Shift</b><span>Sprint</span>
+          <b>C / Z</b><span>Crouch · go prone (harder to spot)</span>
+          <b>Space</b><span>Jump</span>
+          <b>R</b><span>Reload</span>
+          <b>F</b><span>Fire mode</span>
+          <b>E</b><span>Search a container</span>
+          <b>H</b><span>Use the right medical item</span>
+          <b>Esc</b><span>Pause</span>
+        </div>
+        <div class="kv" style="margin-top:8px"><span>Mouse sensitivity</span>
+          <span><button class="btn sm" id="sensDn">−</button>
+          <b id="sensVal" style="padding:0 8px;color:var(--acc2)"></b>
+          <button class="btn sm" id="sensUp">+</button></span></div>
+        <div class="mactions">
+          <button class="btn danger" id="abandonBtn">Abandon raid</button>
+          <button class="btn pri" id="resumeBtn">Resume</button>
+        </div>
+      </div></div>
+
+      <div id="touchwarn"><div>
+        <h2>Keyboard and mouse required</h2>
+        <div class="sub" style="max-width:420px">This is a mouse-look shooter. It needs a pointer that can be captured, so it will not play on a touchscreen. Everything else — the stash, workbench and traders — works fine here.</div>
+        <button class="btn" onclick="document.getElementById('touchwarn').classList.remove('on')">Understood</button>
+      </div></div>
+    </div>
+
+  </div>
+  <div id="modal"><div id="modalBox"></div></div>
+</div>
+
+<script>
+"use strict";
+/* ==========================================================================
+   EXFIL — a first-person extraction shooter.
+   Single file, no dependencies, raw WebGL2. An original game, mechanically
+   inspired by the extraction-shooter genre.
+
+   SECTION 1 — DATA
+   Ballistics, platforms, attachments, armour and medical items. Every number
+   below is consumed by the combat resolver in SECTION 3; nothing here is
+   decorative.
+   ========================================================================== */
+
+const CALIBERS = {
+  '545x39' : { name: '5.45x39mm',  short: '5.45' },
+  '762x39' : { name: '7.62x39mm',  short: '7.62x39' },
+  '556x45' : { name: '5.56x45mm',  short: '5.56' },
+  '9x19'   : { name: '9x19mm',     short: '9x19' },
+  '762x54' : { name: '7.62x54mmR', short: '7.62x54R' },
+  '12g'    : { name: '12/70 gauge',short: '12ga' },
+};
+
+/* --- Ammunition ----------------------------------------------------------
+   dmg    flesh damage per projectile
+   pen    penetration power, compared against armour resistance
+   aDmg   fraction of armour durability destroyed on impact
+   frag   chance to fragment inside flesh (bonus damage, never vs. armour)
+   vel    muzzle velocity m/s — drives penetration falloff over distance
+   quiet  subsonic: much smaller noise radius
+   pel    projectiles per trigger pull (shotguns)                          */
+const AMMO = [
+  // 5.45x39
+  { id:'545_hp',  name:'5.45 HP',         cal:'545x39', dmg:60, pen:11, aDmg:0.20, frag:0.17, vel:884, price:45 },
+  { id:'545_ps',  name:'5.45 PS gzh',     cal:'545x39', dmg:40, pen:28, aDmg:0.38, frag:0.12, vel:890, price:78 },
+  { id:'545_t',   name:'5.45 T gzh',      cal:'545x39', dmg:42, pen:25, aDmg:0.35, frag:0.10, vel:880, price:62 },
+  { id:'545_bt',  name:'5.45 BT gzh',     cal:'545x39', dmg:42, pen:33, aDmg:0.45, frag:0.07, vel:880, price:130 },
+  { id:'545_bp',  name:'5.45 BP gzh',     cal:'545x39', dmg:43, pen:37, aDmg:0.48, frag:0.06, vel:890, price:215 },
+  { id:'545_bs',  name:'5.45 BS gs',      cal:'545x39', dmg:40, pen:51, aDmg:0.58, frag:0.05, vel:830, price:590 },
+  // 7.62x39
+  { id:'762_hp',  name:'7.62x39 HP',      cal:'762x39', dmg:80, pen:15, aDmg:0.22, frag:0.17, vel:730, price:55 },
+  { id:'762_ps',  name:'7.62x39 PS gzh',  cal:'762x39', dmg:57, pen:30, aDmg:0.40, frag:0.13, vel:730, price:95 },
+  { id:'762_us',  name:'7.62x39 US gzh',  cal:'762x39', dmg:50, pen:20, aDmg:0.30, frag:0.07, vel:300, price:160, quiet:true },
+  { id:'762_bp',  name:'7.62x39 BP gzh',  cal:'762x39', dmg:58, pen:47, aDmg:0.52, frag:0.06, vel:730, price:340 },
+  { id:'762_ap',  name:'7.62x39 MAI AP',  cal:'762x39', dmg:53, pen:58, aDmg:0.62, frag:0.04, vel:730, price:1100 },
+  // 5.56x45
+  { id:'556_hp',  name:'5.56 Warmageddon',cal:'556x45', dmg:66, pen:10, aDmg:0.18, frag:0.19, vel:890, price:75 },
+  { id:'556_m855',name:'5.56 M855',       cal:'556x45', dmg:40, pen:31, aDmg:0.40, frag:0.12, vel:922, price:130 },
+  { id:'556_tr',  name:'5.56 M856A1',     cal:'556x45', dmg:44, pen:24, aDmg:0.35, frag:0.10, vel:900, price:110 },
+  { id:'556_m855a1',name:'5.56 M855A1',   cal:'556x45', dmg:43, pen:37, aDmg:0.48, frag:0.07, vel:945, price:290 },
+  { id:'556_m995',name:'5.56 M995 AP',    cal:'556x45', dmg:42, pen:53, aDmg:0.60, frag:0.05, vel:1013,price:950 },
+  // 9x19
+  { id:'9_rip',   name:'9x19 RIP',        cal:'9x19',   dmg:102,pen:2,  aDmg:0.10, frag:0.35, vel:380, price:130 },
+  { id:'9_sub',   name:'9x19 Subsonic',   cal:'9x19',   dmg:70, pen:5,  aDmg:0.15, frag:0.20, vel:320, price:90, quiet:true },
+  { id:'9_pst',   name:'9x19 PST gzh',    cal:'9x19',   dmg:54, pen:20, aDmg:0.32, frag:0.10, vel:400, price:55 },
+  { id:'9_gt',    name:'9x19 Green Tr.',  cal:'9x19',   dmg:58, pen:8,  aDmg:0.20, frag:0.12, vel:390, price:45 },
+  { id:'9_ap',    name:'9x19 AP 6.3',     cal:'9x19',   dmg:52, pen:30, aDmg:0.42, frag:0.05, vel:392, price:180 },
+  // 7.62x54R
+  { id:'54_lps',  name:'7.62x54R LPS',    cal:'762x54', dmg:81, pen:41, aDmg:0.50, frag:0.07, vel:800, price:200 },
+  { id:'54_t46',  name:'7.62x54R T-46M',  cal:'762x54', dmg:82, pen:38, aDmg:0.48, frag:0.07, vel:790, price:180 },
+  { id:'54_7n1',  name:'7.62x54R 7N1',    cal:'762x54', dmg:82, pen:46, aDmg:0.54, frag:0.06, vel:800, price:420 },
+  { id:'54_snb',  name:'7.62x54R SNB',    cal:'762x54', dmg:80, pen:56, aDmg:0.62, frag:0.04, vel:820, price:780 },
+  { id:'54_bt',   name:'7.62x54R BT',     cal:'762x54', dmg:78, pen:62, aDmg:0.68, frag:0.03, vel:800, price:1400 },
+  // 12 gauge
+  { id:'12_buck', name:'12/70 Buckshot',  cal:'12g',    dmg:50, pen:3,  aDmg:0.12, frag:0.05, vel:385, price:110, pel:8 },
+  { id:'12_mag',  name:'12/70 Magnum',    cal:'12g',    dmg:39, pen:2,  aDmg:0.10, frag:0.05, vel:410, price:130, pel:10 },
+  { id:'12_flech',name:'12/70 Flechette', cal:'12g',    dmg:25, pen:31, aDmg:0.42, frag:0.02, vel:530, price:420, pel:8 },
+  { id:'12_slug', name:'12/70 Poleva-6u', cal:'12g',    dmg:150,pen:22, aDmg:0.35, frag:0.08, vel:415, price:290, pel:1 },
+  { id:'12_ap20', name:'12/70 AP-20 slug',cal:'12g',    dmg:164,pen:37, aDmg:0.55, frag:0.03, vel:510, price:980, pel:1 },
+];
+
+/* --- Weapon platforms ----------------------------------------------------
+   ergo    ergonomics: buys back action points on aimed shots
+   rv/rh   vertical / horizontal recoil, raw units
+   moa     mechanical dispersion — grows with distance
+   sight   iron-sight usable range in metres
+   noise   metres at which a shot alerts AI
+   slots   which attachment points exist on this platform
+   fixed   parts fitted from the factory (free with the gun)               */
+const PLATFORMS = [
+  { id:'akm',   name:'AKM',        cal:'762x39', family:'ak',   mag:30, modes:['single','auto'], boltAP:0, price:21000,
+    ergo:48, rv:145, rh:415, moa:3.2, w:3.30, sight:55, vel:715, noise:55,
+    slots:['muzzle','barrel','gasblock','handguard','dustcover','pistolgrip','stock','mount','optic','mag','foregrip','tactical'],
+    fixed:{ barrel:'ak_bbl_415', handguard:'ak_hg_wood', pistolgrip:'ak_pg_bake', stock:'ak_st_wood', dustcover:'ak_dc_std', gasblock:'ak_gb_std', mag:'ak_mag_30' } },
+
+  { id:'ak74n', name:'AK-74N',     cal:'545x39', family:'ak',   mag:30, modes:['single','auto'], boltAP:0, price:24000,
+    ergo:44, rv:141, rh:413, moa:2.9, w:3.30, sight:55, vel:880, noise:54,
+    slots:['muzzle','barrel','gasblock','handguard','dustcover','pistolgrip','stock','mount','optic','mag','foregrip','tactical'],
+    fixed:{ barrel:'ak_bbl_415', handguard:'ak_hg_poly', pistolgrip:'ak_pg_bake', stock:'ak_st_poly', dustcover:'ak_dc_std', gasblock:'ak_gb_std', mag:'ak74_mag_30' } },
+
+  { id:'m4a1',  name:'M4A1',       cal:'556x45', family:'ar',   mag:30, modes:['single','burst','auto'], boltAP:0, price:38000,
+    ergo:46, rv:122, rh:445, moa:2.4, w:2.90, sight:60, vel:890, noise:52, base:['rail'],
+    slots:['muzzle','barrel','handguard','pistolgrip','stock','optic','mag','foregrip','tactical'],
+    fixed:{ barrel:'ar_bbl_370', handguard:'ar_hg_std', pistolgrip:'ar_pg_std', stock:'ar_st_carb', mag:'ar_mag_30' } },
+
+  { id:'mp5',   name:'MP5',        cal:'9x19',   family:'mp5',  mag:30, modes:['single','burst','auto'], boltAP:0, price:26000,
+    ergo:62, rv:82,  rh:224, moa:3.6, w:2.50, sight:45, vel:380, noise:42,
+    slots:['muzzle','handguard','stock','mount','optic','mag','foregrip','tactical'],
+    fixed:{ handguard:'mp5_hg_std', stock:'mp5_st_a3', mag:'mp5_mag_30' } },
+
+  { id:'mpx',   name:'MPX',        cal:'9x19',   family:'mpx',  mag:30, modes:['single','burst','auto'], boltAP:0, price:33000,
+    ergo:68, rv:74,  rh:209, moa:3.2, w:2.60, sight:50, vel:400, noise:42, base:['rail'],
+    slots:['muzzle','barrel','handguard','stock','optic','mag','foregrip','tactical'],
+    fixed:{ barrel:'mpx_bbl_165', handguard:'mpx_hg_std', stock:'mpx_st_std', mag:'mpx_mag_30' } },
+
+  { id:'vpo',   name:'VPO-136',    cal:'762x39', family:'ak',   mag:10, modes:['single'], boltAP:0, price:14000,
+    ergo:42, rv:152, rh:430, moa:3.8, w:3.40, sight:50, vel:730, noise:55,
+    slots:['muzzle','barrel','gasblock','handguard','dustcover','pistolgrip','stock','mount','optic','mag','foregrip','tactical'],
+    fixed:{ barrel:'ak_bbl_590', handguard:'ak_hg_wood', pistolgrip:'ak_pg_bake', stock:'ak_st_wood', dustcover:'ak_dc_std', gasblock:'ak_gb_std', mag:'ak_mag_10' } },
+
+  { id:'vityaz',name:'PP-19-01',   cal:'9x19',   family:'ak',   mag:30, modes:['single','auto'], boltAP:0, price:19000,
+    ergo:58, rv:86,  rh:235, moa:3.5, w:2.70, sight:45, vel:400, noise:42,
+    slots:['muzzle','handguard','dustcover','pistolgrip','stock','mount','optic','mag','foregrip','tactical'],
+    fixed:{ handguard:'ak_hg_poly', pistolgrip:'ak_pg_bake', stock:'ak_st_poly', dustcover:'ak_dc_std', mag:'vit_mag_30' } },
+
+  { id:'saiga', name:'Saiga-12K',  cal:'12g',    family:'ak12', mag:8,  modes:['single'], boltAP:0, price:30000,
+    ergo:40, rv:460, rh:720, moa:6.0, w:3.80, sight:35, vel:380, noise:58,
+    slots:['muzzle','handguard','dustcover','pistolgrip','stock','mount','optic','mag','foregrip','tactical'],
+    fixed:{ handguard:'ak_hg_poly', pistolgrip:'ak_pg_bake', stock:'ak_st_poly', dustcover:'ak_dc_std', mag:'sg_mag_8' } },
+
+  { id:'svd',   name:'SVD-S',      cal:'762x54', family:'svd',  mag:10, modes:['single'], boltAP:0, price:52000,
+    ergo:40, rv:168, rh:385, moa:1.6, w:4.30, sight:90, vel:830, noise:62,
+    slots:['muzzle','handguard','stock','mount','optic','mag'],
+    fixed:{ handguard:'svd_hg_std', stock:'svd_st_std', mag:'svd_mag_10' } },
+
+  { id:'mosin', name:'Mosin 91/30',cal:'762x54', family:'mosin',mag:5,  modes:['single'], boltAP:2, price:12000,
+    ergo:22, rv:205, rh:480, moa:1.9, w:4.50, sight:80, vel:800, noise:62,
+    slots:['muzzle','stock','mount','optic'],
+    fixed:{ stock:'mos_st_std' } },
+];
+
+/* --- Attachments ---------------------------------------------------------
+   provides / requires drive real compatibility. A suppressor needs a
+   threaded barrel; an optic needs a rail from somewhere. Deltas are additive,
+   recoil deltas are percentages of the platform's base recoil.             */
+function M(o){
+  return Object.assign({ type:'mod', ergo:0, rv:0, rh:0, moa:0, w:0, vel:0, noise:0,
+                         sight:0, zoom:1, provides:[], requires:null, price:0 }, o);
+}
+const MODS = [
+  /* ---- muzzle devices ---- */
+  M({ id:'mz_ak_std',  name:'AK muzzle brake',        slot:'muzzle', fits:['ak','ak12'], requires:'thread', ergo:-1, rv:-6,  rh:-8,  w:0.08, price:2600 }),
+  M({ id:'mz_ak_dtk',  name:'DTK-1 brake',            slot:'muzzle', fits:['ak','ak12'], requires:'thread', ergo:-2, rv:-15, rh:-13, w:0.14, noise:6, price:11000 }),
+  M({ id:'mz_ak_supp', name:'PBS-1 suppressor',       slot:'muzzle', fits:['ak'],        requires:'thread', ergo:-6, rv:-11, rh:-7,  w:0.62, vel:-40, noise:-48, price:34000 }),
+  M({ id:'mz_ar_a2',   name:'A2 flash hider',         slot:'muzzle', fits:['ar'],        requires:'thread', ergo:-1, rv:-4,  rh:-5,  w:0.06, price:1900 }),
+  M({ id:'mz_ar_brake',name:'SureFire MB556K',        slot:'muzzle', fits:['ar','mpx'],  requires:'thread', ergo:-2, rv:-14, rh:-11, w:0.13, noise:5, price:14000 }),
+  M({ id:'mz_ar_supp', name:'SOCOM556 suppressor',    slot:'muzzle', fits:['ar'],        requires:'thread', ergo:-7, rv:-12, rh:-8,  w:0.55, vel:-25, noise:-46, price:52000 }),
+  M({ id:'mz_9_supp',  name:'9mm suppressor',         slot:'muzzle', fits:['mp5','mpx','ak'], requires:'thread', ergo:-5, rv:-9, rh:-6, w:0.44, vel:-15, noise:-52, price:29000 }),
+  M({ id:'mz_12_choke',name:'Saiga choke',            slot:'muzzle', fits:['ak12'],      requires:'thread', ergo:-1, moa:-1.4, w:0.09, price:5200 }),
+  M({ id:'mz_svd_supp',name:'SVD suppressor',         slot:'muzzle', fits:['svd'],       requires:'thread', ergo:-8, rv:-10, rh:-6, w:0.85, vel:-30, noise:-44, price:66000 }),
+  M({ id:'mz_mos_brake',name:'Mosin muzzle brake',    slot:'muzzle', fits:['mosin'],     requires:'thread', ergo:-2, rv:-18, rh:-10, w:0.16, noise:7, price:9000 }),
+
+  /* ---- barrels (thread is not automatic) ---- */
+  M({ id:'ak_bbl_314', name:'AK 314mm barrel',        slot:'barrel', fits:['ak'], provides:['thread'], ergo:6,  rv:5,  rh:4,  moa:0.9,  w:-0.20, vel:-70, noise:-4, price:9000 }),
+  M({ id:'ak_bbl_415', name:'AK 415mm barrel',        slot:'barrel', fits:['ak'], provides:['thread'], price:6500 }),
+  M({ id:'ak_bbl_590', name:'AK 590mm barrel',        slot:'barrel', fits:['ak'], provides:['thread'], ergo:-7, rv:-4, rh:-3, moa:-0.7, w:0.28, vel:75, noise:5, price:13000 }),
+  M({ id:'ak_bbl_nt',  name:'AK 415mm, unthreaded',   slot:'barrel', fits:['ak'], ergo:1, moa:0.1, w:-0.02, price:2800 }),
+  M({ id:'ar_bbl_260', name:'AR 260mm barrel',        slot:'barrel', fits:['ar'], provides:['thread'], ergo:8,  rv:6,  rh:5,  moa:1.1,  w:-0.22, vel:-95, noise:-5, price:14000 }),
+  M({ id:'ar_bbl_370', name:'AR 370mm barrel',        slot:'barrel', fits:['ar'], provides:['thread'], price:11000 }),
+  M({ id:'ar_bbl_508', name:'AR 508mm barrel',        slot:'barrel', fits:['ar'], provides:['thread'], ergo:-9, rv:-5, rh:-4, moa:-0.6, w:0.30, vel:85, noise:6, price:21000 }),
+  M({ id:'mpx_bbl_165',name:'MPX 165mm barrel',       slot:'barrel', fits:['mpx'], provides:['thread'], price:7000 }),
+  M({ id:'mpx_bbl_356',name:'MPX 356mm barrel',       slot:'barrel', fits:['mpx'], provides:['thread'], ergo:-6, rv:-4, rh:-3, moa:-0.5, w:0.25, vel:60, price:16000 }),
+
+  /* ---- gas blocks (AK) ---- */
+  M({ id:'ak_gb_std',  name:'AK gas block',           slot:'gasblock', fits:['ak'], price:1200 }),
+  M({ id:'ak_gb_rail', name:'AK gas block w/ rail',   slot:'gasblock', fits:['ak'], provides:['rail'], ergo:-1, w:0.10, price:7800 }),
+
+  /* ---- handguards ---- */
+  M({ id:'ak_hg_wood', name:'AK wooden handguard',    slot:'handguard', fits:['ak','ak12'], price:1400 }),
+  M({ id:'ak_hg_poly', name:'AK polymer handguard',   slot:'handguard', fits:['ak','ak12'], ergo:2, w:-0.06, price:2400 }),
+  M({ id:'ak_hg_b10',  name:'B-10M rail handguard',   slot:'handguard', fits:['ak','ak12'], provides:['rail','lower'], ergo:5, rv:-6, rh:-5, w:0.24, price:19000 }),
+  M({ id:'ak_hg_zenit',name:'B-11 KeyMod handguard',  slot:'handguard', fits:['ak','ak12'], provides:['rail','lower'], ergo:9, rv:-9, rh:-7, w:0.19, price:31000 }),
+  M({ id:'ar_hg_std',  name:'M4 plastic handguard',   slot:'handguard', fits:['ar'], price:2200 }),
+  M({ id:'ar_hg_quad', name:'Quad-rail handguard',    slot:'handguard', fits:['ar'], provides:['rail','lower'], ergo:-3, rv:-7, rh:-6, w:0.36, price:16000 }),
+  M({ id:'ar_hg_mlok', name:'MLOK free-float rail',   slot:'handguard', fits:['ar'], provides:['rail','lower'], ergo:7, rv:-11, rh:-9, moa:-0.3, w:0.21, price:34000 }),
+  M({ id:'mp5_hg_std', name:'MP5 handguard',          slot:'handguard', fits:['mp5'], price:2000 }),
+  M({ id:'mp5_hg_rail',name:'MP5 tri-rail handguard', slot:'handguard', fits:['mp5'], provides:['rail','lower','thread'], ergo:2, rv:-6, rh:-5, w:0.22, price:15000 }),
+  M({ id:'mpx_hg_std', name:'MPX MLOK handguard',     slot:'handguard', fits:['mpx'], provides:['rail','lower'], price:5000 }),
+  M({ id:'svd_hg_std', name:'SVD handguard',          slot:'handguard', fits:['svd'], provides:['thread'], price:3000 }),
+  M({ id:'svd_hg_rail',name:'SVD chassis handguard',  slot:'handguard', fits:['svd'], provides:['rail','lower','thread'], ergo:4, rv:-12, rh:-9, moa:-0.3, w:0.42, price:44000 }),
+
+  /* ---- dust covers (AK) ---- */
+  M({ id:'ak_dc_std',  name:'AK dust cover',          slot:'dustcover', fits:['ak','ak12'], price:900 }),
+  M({ id:'ak_dc_rail', name:'AK railed dust cover',   slot:'dustcover', fits:['ak','ak12'], provides:['rail'], ergo:-2, moa:0.3, w:0.18, price:12000 }),
+  M({ id:'ak_dc_zenit',name:'B-13 hinged dust cover', slot:'dustcover', fits:['ak','ak12'], provides:['rail'], ergo:-1, w:0.21, price:27000 }),
+
+  /* ---- pistol grips ---- */
+  M({ id:'ak_pg_bake', name:'AK bakelite grip',       slot:'pistolgrip', fits:['ak','ak12'], price:800 }),
+  M({ id:'ak_pg_rk3',  name:'RK-3 ergonomic grip',    slot:'pistolgrip', fits:['ak','ak12'], ergo:8, w:0.03, price:9500 }),
+  M({ id:'ar_pg_std',  name:'M4 A2 grip',             slot:'pistolgrip', fits:['ar'], price:900 }),
+  M({ id:'ar_pg_ergo', name:'Ergo Grip F93',          slot:'pistolgrip', fits:['ar'], ergo:7, w:0.02, price:8200 }),
+
+  /* ---- stocks ---- */
+  M({ id:'ak_st_wood', name:'AK wooden stock',        slot:'stock', fits:['ak','ak12'], price:1600 }),
+  M({ id:'ak_st_poly', name:'AK polymer stock',       slot:'stock', fits:['ak','ak12'], ergo:2, w:-0.10, price:3200 }),
+  M({ id:'ak_st_fold', name:'AK folding stock',       slot:'stock', fits:['ak','ak12'], ergo:6, rv:6, rh:5, w:-0.22, price:11000 }),
+  M({ id:'ak_st_pt1',  name:'PT-1 telescopic stock',  slot:'stock', fits:['ak','ak12'], ergo:5, rv:-13, rh:-10, w:0.16, price:29000 }),
+  M({ id:'ar_st_carb', name:'M4 carbine stock',       slot:'stock', fits:['ar'], price:2200 }),
+  M({ id:'ar_st_magpul',name:'CTR carbine stock',     slot:'stock', fits:['ar'], ergo:4, rv:-9, rh:-7, w:0.08, price:14000 }),
+  M({ id:'ar_st_pre',  name:'PRS precision stock',    slot:'stock', fits:['ar'], ergo:-6, rv:-17, rh:-13, moa:-0.2, w:0.48, price:38000 }),
+  M({ id:'mp5_st_a3',  name:'MP5 A3 sliding stock',   slot:'stock', fits:['mp5'], price:3400 }),
+  M({ id:'mp5_st_fix', name:'MP5 A2 fixed stock',     slot:'stock', fits:['mp5'], ergo:-2, rv:-10, rh:-8, w:0.14, price:6000 }),
+  M({ id:'mpx_st_std', name:'MPX folding stock',      slot:'stock', fits:['mpx'], price:4200 }),
+  M({ id:'svd_st_std', name:'SVD-S folding stock',    slot:'stock', fits:['svd'], price:5000 }),
+  M({ id:'svd_st_chas',name:'SVD chassis stock',      slot:'stock', fits:['svd'], ergo:-4, rv:-16, rh:-12, w:0.55, price:47000 }),
+  M({ id:'mos_st_std', name:'Mosin infantry stock',   slot:'stock', fits:['mosin'], provides:['thread'], price:2000 }),
+  M({ id:'mos_st_arch',name:'Archangel chassis',      slot:'stock', fits:['mosin'], provides:['rail','thread'], ergo:14, rv:-14, rh:-11, w:0.32, price:36000 }),
+
+  /* ---- scope mounts ---- */
+  M({ id:'mnt_ak_side',name:'AK side-rail mount',     slot:'mount', fits:['ak','ak12'], provides:['rail'], ergo:-2, w:0.16, price:8500 }),
+  M({ id:'mnt_svd',    name:'SVD side mount',         slot:'mount', fits:['svd'], provides:['rail'], ergo:-2, w:0.20, price:9000 }),
+  M({ id:'mnt_mos',    name:'Mosin rail mount',       slot:'mount', fits:['mosin'], provides:['rail'], ergo:-2, w:0.14, price:7500 }),
+  M({ id:'mnt_mp5',    name:'MP5 claw mount',         slot:'mount', fits:['mp5'], provides:['rail'], ergo:-1, w:0.12, price:6500 }),
+
+  /* ---- optics (all need a rail from somewhere) ---- */
+  M({ id:'op_kobra',   name:'Kobra red dot',          slot:'optic', fits:'*', requires:'rail', ergo:-2, sight:95,  zoom:1, w:0.23, price:11000 }),
+  M({ id:'op_okp7',    name:'OKP-7 reflex',           slot:'optic', fits:'*', requires:'rail', ergo:-2, sight:100, zoom:1, w:0.21, price:14000 }),
+  M({ id:'op_aimpoint',name:'Aimpoint T-1',           slot:'optic', fits:'*', requires:'rail', ergo:-1, sight:110, zoom:1, w:0.14, price:24000 }),
+  M({ id:'op_eotech',  name:'EOTech holographic',     slot:'optic', fits:'*', requires:'rail', ergo:-3, sight:120, zoom:1, w:0.30, price:31000 }),
+  M({ id:'op_acog',    name:'ACOG 4x',                slot:'optic', fits:'*', requires:'rail', ergo:-6, sight:190, zoom:4, moa:-0.2, w:0.62, price:58000 }),
+  M({ id:'op_pso1',    name:'PSO-1 4x',               slot:'optic', fits:'*', requires:'rail', ergo:-7, sight:200, zoom:4, moa:-0.2, w:0.68, price:42000 }),
+  M({ id:'op_march',   name:'March 3-12x',            slot:'optic', fits:'*', requires:'rail', ergo:-11,sight:280, zoom:8, moa:-0.35,w:0.90, price:105000 }),
+
+  /* ---- foregrips ---- */
+  M({ id:'fg_rk2',     name:'RK-2 foregrip',          slot:'foregrip', fits:'*', requires:'lower', ergo:2,  rv:-9,  rh:-7,  w:0.12, price:8000 }),
+  M({ id:'fg_shift',   name:'SHIFT tactical grip',    slot:'foregrip', fits:'*', requires:'lower', ergo:4,  rv:-12, rh:-10, w:0.10, price:17000 }),
+  M({ id:'fg_stubby',  name:'Stubby foregrip',        slot:'foregrip', fits:'*', requires:'lower', ergo:6,  rv:-6,  rh:-5,  w:0.06, price:6200 }),
+  M({ id:'fg_bipod',   name:'Harris bipod',           slot:'foregrip', fits:'*', requires:'lower', ergo:-7, rv:-22, rh:-18, moa:-0.3, w:0.55, price:26000 }),
+
+  /* ---- tactical ---- */
+  M({ id:'tac_laser',  name:'Laser designator',       slot:'tactical', fits:'*', requires:'lower', ergo:-1, moa:-0.45, w:0.11, price:19000 }),
+  M({ id:'tac_light',  name:'Weapon light',           slot:'tactical', fits:'*', requires:'lower', ergo:-1, sight:15, w:0.14, price:9000 }),
+
+  /* ---- magazines ---- */
+  M({ id:'ak_mag_10',  name:'AK 10-rd magazine',      slot:'mag', fits:['ak'], cap:10, ergo:4,  w:0.14, price:1500 }),
+  M({ id:'ak_mag_30',  name:'AK 30-rd steel mag',     slot:'mag', fits:['ak'], cap:30, w:0.33, price:2400 }),
+  M({ id:'ak_mag_40',  name:'AK 40-rd RPK mag',       slot:'mag', fits:['ak'], cap:40, ergo:-5, w:0.52, price:7800 }),
+  M({ id:'ak74_mag_30',name:'AK-74 30-rd plum mag',   slot:'mag', fits:['ak'], cap:30, ergo:1, w:0.22, price:2900 }),
+  M({ id:'ak74_mag_60',name:'AK-74 60-rd quad mag',   slot:'mag', fits:['ak'], cap:60, ergo:-9, w:0.72, price:24000 }),
+  M({ id:'ar_mag_30',  name:'STANAG 30-rd',           slot:'mag', fits:['ar'], cap:30, w:0.25, price:2600 }),
+  M({ id:'ar_mag_60',  name:'SureFire 60-rd',         slot:'mag', fits:['ar'], cap:60, ergo:-8, w:0.66, price:21000 }),
+  M({ id:'mp5_mag_30', name:'MP5 30-rd',              slot:'mag', fits:['mp5'], cap:30, w:0.20, price:2200 }),
+  M({ id:'mpx_mag_30', name:'MPX 30-rd',              slot:'mag', fits:['mpx'], cap:30, w:0.20, price:2500 }),
+  M({ id:'vit_mag_30', name:'Vityaz 30-rd',           slot:'mag', fits:['ak'], cap:30, w:0.21, price:2300 }),
+  M({ id:'sg_mag_8',   name:'Saiga 8-rd',             slot:'mag', fits:['ak12'], cap:8, w:0.30, price:4000 }),
+  M({ id:'sg_mag_20',  name:'Saiga 20-rd drum',       slot:'mag', fits:['ak12'], cap:20, ergo:-10, w:0.95, price:26000 }),
+  M({ id:'svd_mag_10', name:'SVD 10-rd',              slot:'mag', fits:['svd'], cap:10, w:0.28, price:4500 }),
+];
+
+/* --- Armour --------------------------------------------------------------
+   cls    protection class, compared against ammunition penetration
+   dur    durability — as it wears down the plate stops less
+   zones  which body parts it covers
+   blunt  fraction of damage that comes through when a round is stopped     */
+const ARMOR = [
+  { id:'h_ssh',   name:'SSh-68 steel helmet', type:'helmet', cls:2, dur:30, zones:['head'], blunt:0.32, ergo:-1,  speed:0,  w:1.3, price:8000 },
+  { id:'h_6b47',  name:'6B47 helmet',         type:'helmet', cls:3, dur:45, zones:['head'], blunt:0.30, ergo:-2,  speed:0,  w:1.4, price:24000 },
+  { id:'h_fast',  name:'FAST MT helmet',      type:'helmet', cls:4, dur:46, zones:['head'], blunt:0.28, ergo:-2,  speed:0,  w:1.2, price:41000 },
+  { id:'h_altyn', name:'Altyn heavy helmet',  type:'helmet', cls:5, dur:55, zones:['head'], blunt:0.24, ergo:-4, speed:-3, w:4.2, price:96000 },
+
+  { id:'a_paca',  name:'PACA soft armour',    type:'armor', cls:2, dur:40, zones:['thorax','stomach'], blunt:0.36, ergo:-1,  speed:-1, w:3.0, price:12000 },
+  { id:'a_6b23',  name:'6B23-1 vest',         type:'armor', cls:4, dur:55, zones:['thorax','stomach'], blunt:0.30, ergo:-3,  speed:-3, w:6.5, price:38000 },
+  { id:'a_6b13',  name:'6B13 assault vest',   type:'armor', cls:4, dur:50, zones:['thorax','stomach'], blunt:0.31, ergo:-2,  speed:-2, w:5.5, price:44000 },
+  { id:'a_gzhel', name:'Gzhel-K body armour', type:'armor', cls:4, dur:60, zones:['thorax','stomach','larm','rarm'], blunt:0.29, ergo:-4, speed:-5, w:8.5, price:62000 },
+  { id:'a_slick', name:'Slick plate carrier', type:'armor', cls:6, dur:80, zones:['thorax'], blunt:0.20, ergo:-4, speed:-4, w:8.0, price:190000 },
+  { id:'a_zhuk',  name:'Zhuk-6a heavy armour',type:'armor', cls:6, dur:85, zones:['thorax','stomach','larm','rarm'], blunt:0.22, ergo:-6, speed:-9, w:12.5, price:210000 },
+];
+
+/* Chest rigs — carrying capacity, sometimes armoured. cap = pouches for
+   magazines and medical items carried into the raid.                       */
+const RIGS = [
+  { id:'r_scav',  name:'Scav rig',           type:'rig', cap:4,  cls:0, dur:0,  zones:[], blunt:0, ergo:0,  speed:0,  w:0.7, price:3000 },
+  { id:'r_blackrock',name:'Blackrock rig',   type:'rig', cap:8,  cls:0, dur:0,  zones:[], blunt:0, ergo:-1, speed:-1, w:1.4, price:19000 },
+  { id:'r_avs',   name:'AVS armoured rig',   type:'rig', cap:7,  cls:4, dur:45, zones:['thorax','stomach'], blunt:0.31, ergo:-3, speed:-3, w:7.0, price:88000 },
+  { id:'r_bank',  name:'Bank robber rig',    type:'rig', cap:12, cls:0, dur:0,  zones:[], blunt:0, ergo:-2, speed:-2, w:1.9, price:41000 },
+];
+
+/* --- Medical -------------------------------------------------------------
+   pool   hit points the item can restore before it is used up
+   cures  which conditions it removes
+   ap     action points to use in a raid                                    */
+const MEDS = [
+  { id:'m_bandage', name:'Army bandage',    type:'med', pool:0,    ap:2, cures:['light'],                 price:2500 },
+  { id:'m_tourni',  name:'Esmarch tourniquet',type:'med',pool:0,   ap:3, cures:['heavy','light'],         price:6000 },
+  { id:'m_splint',  name:'Aluminium splint', type:'med', pool:0,   ap:3, cures:['frac'],                  price:3500 },
+  { id:'m_ai2',     name:'AI-2 medkit',      type:'med', pool:100, ap:3, cures:[],                        price:7000 },
+  { id:'m_car',     name:'Car first aid kit',type:'med', pool:220, ap:3, cures:['light'],                 price:11000 },
+  { id:'m_salewa',  name:'Salewa first aid', type:'med', pool:400, ap:3, cures:['light','heavy'],         price:19000 },
+  { id:'m_ifak',    name:'IFAK',             type:'med', pool:300, ap:3, cures:['light','heavy'],         price:22000 },
+  { id:'m_grizzly', name:'Grizzly medkit',   type:'med', pool:1800,ap:4, cures:['light','heavy','frac'],  price:45000 },
+  { id:'m_morphine',name:'Morphine injector',type:'med', pool:0,   ap:2, cures:['pain'],                  price:15000 },
+];
+
+/* --- Loot & keys ---------------------------------------------------------
+   Found in containers. Rarity is the inverse of how often it rolls.        */
+const LOOT = [
+  { id:'l_bolts',  name:'Bolts',              type:'loot', w:0.20, price:1800,   rar:1 },
+  { id:'l_screw',  name:'Screw nut',          type:'loot', w:0.15, price:2200,   rar:1 },
+  { id:'l_wires',  name:'Wires',              type:'loot', w:0.30, price:4500,   rar:1 },
+  { id:'l_powder', name:'Gunpowder',          type:'loot', w:0.45, price:9000,   rar:2 },
+  { id:'l_water',  name:'Water bottle',       type:'loot', w:0.60, price:6000,   rar:1 },
+  { id:'l_stew',   name:'Tinned stew',        type:'loot', w:0.40, price:5200,   rar:1 },
+  { id:'l_moon',   name:'Moonshine',          type:'loot', w:0.90, price:52000,  rar:4 },
+  { id:'l_chain',  name:'Gold chain',         type:'loot', w:0.05, price:38000,  rar:3 },
+  { id:'l_watch',  name:'Roler Submariner',   type:'loot', w:0.10, price:74000,  rar:4 },
+  { id:'l_gpu',    name:'Graphics card',      type:'loot', w:0.75, price:118000, rar:5 },
+  { id:'l_ledx',   name:'LEDX transilluminator',type:'loot',w:0.20,price:165000, rar:6 },
+  { id:'l_btc',    name:'Physical bitcoin',   type:'loot', w:0.05, price:210000, rar:7 },
+  { id:'l_docs',   name:'Sealed documents',   type:'loot', w:0.05, price:26000,  rar:3 },
+  { id:'l_tools',  name:'Toolset',            type:'loot', w:1.20, price:31000,  rar:3 },
+];
+
+const KEYS = [
+  { id:'k_dorm',  name:'Dormitory room key',  type:'key', w:0.02, price:34000, opens:'car' },
+  { id:'k_gate',  name:'Factory gate key',    type:'key', w:0.02, price:28000, opens:'gate' },
+  { id:'k_bunker',name:'Bunker hermetic door',type:'key', w:0.02, price:52000, opens:'bunker' },
+];
+
+/* --- Master item index --------------------------------------------------- */
+const ITEMS = {};
+function indexItems(){
+  const push = (arr, kind) => arr.forEach(i => { ITEMS[i.id] = Object.assign({ kind }, i); });
+  push(AMMO,'ammo'); push(MODS,'mod'); push(ARMOR,'armor'); push(RIGS,'rig');
+  push(MEDS,'med');  push(LOOT,'loot'); push(KEYS,'key');
+  PLATFORMS.forEach(p => { ITEMS[p.id] = Object.assign({ kind:'platform', type:'weapon' }, p); });
+}
+indexItems();
+
+const CAT_OF = { ammo:'ammo', mod:'mods', armor:'gear', rig:'gear', med:'meds', loot:'loot', key:'keys', platform:'weapons' };
+const TAGCLS = { platform:'w', mod:'m', ammo:'w', armor:'a', rig:'a', med:'med', loot:'l', key:'k' };
+
+/* --- Traders -------------------------------------------------------------
+   Each trader stocks a subset of items behind loyalty levels, buys certain
+   categories, and pays a fraction of list price.                           */
+const TRADERS = [
+  { id:'prapor', name:'PRAPOR', blurb:'Ex-military quartermaster. Kalashnikovs, ammunition, Russian gear.',
+    buys:['ammo','mod','platform','armor'], rate:0.42,
+    stock:[ ['akm',1],['ak74n',1],['vpo',1],['mosin',1],['vityaz',2],['saiga',3],
+            ['545_ps',1],['762_ps',1],['9_pst',1],['54_lps',1],['545_t',1],['762_hp',1],
+            ['545_bt',2],['762_bp',3],['54_7n1',3],['545_bs',4],['762_ap',4],['54_snb',4],
+            ['ak_mag_30',1],['ak74_mag_30',1],['ak_mag_10',1],['vit_mag_30',1],['sg_mag_8',1],
+            ['ak_mag_40',2],['ak74_mag_60',3],['sg_mag_20',3],['svd_mag_10',2],
+            ['ak_st_wood',1],['ak_st_poly',1],['ak_pg_bake',1],['ak_hg_wood',1],['ak_gb_std',1],['ak_dc_std',1],
+            ['ak_bbl_415',1],['ak_bbl_314',2],['ak_bbl_590',2],['ak_bbl_nt',1],['mz_ak_std',1],['mz_ak_dtk',2],
+            ['h_ssh',1],['h_6b47',2],['a_paca',1],['a_6b23',3],['a_6b13',3],['svd',3],['mnt_ak_side',2] ] },
+
+  { id:'therapist', name:'THERAPIST', blurb:'Runs the clinic. Medical supplies, and she buys anything valuable.',
+    buys:['med','loot'], rate:0.55,
+    stock:[ ['m_bandage',1],['m_splint',1],['m_ai2',1],['m_tourni',1],['m_car',2],
+            ['m_salewa',2],['m_ifak',3],['m_morphine',3],['m_grizzly',4] ] },
+
+  { id:'skier', name:'SKIER', blurb:'Black-market fixer. Western weapons, suppressors, keys.',
+    buys:['platform','mod','key','loot'], rate:0.46,
+    stock:[ ['mp5',1],['m4a1',2],['mpx',3],
+            ['9_pst',1],['9_gt',1],['9_sub',2],['9_ap',3],['9_rip',3],
+            ['mp5_mag_30',1],['mpx_mag_30',1],['ar_mag_30',1],['ar_mag_60',3],
+            ['mz_9_supp',3],['mz_ak_supp',3],['mz_ar_supp',4],['mz_svd_supp',4],
+            ['k_dorm',2],['k_gate',2],['k_bunker',4],
+            ['mp5_st_a3',1],['mp5_st_fix',2],['mp5_hg_std',1],['mp5_hg_rail',2],['mnt_mp5',2],['mpx_bbl_356',3] ] },
+
+  { id:'mechanic', name:'MECHANIC', blurb:'Gunsmith. Rails, optics, triggers — everything that makes a rifle shoot straight.',
+    buys:['mod','ammo','platform'], rate:0.50,
+    stock:[ ['op_kobra',1],['op_okp7',1],['op_aimpoint',2],['op_eotech',3],['op_acog',3],['op_pso1',3],['op_march',4],
+            ['ak_hg_b10',2],['ak_hg_zenit',3],['ak_dc_rail',2],['ak_dc_zenit',3],['ak_gb_rail',2],
+            ['ar_hg_quad',2],['ar_hg_mlok',3],['ar_st_magpul',2],['ar_st_pre',4],['ar_pg_ergo',2],['ak_pg_rk3',2],
+            ['ak_st_fold',2],['ak_st_pt1',3],['fg_stubby',1],['fg_rk2',2],['fg_shift',3],['fg_bipod',3],
+            ['tac_laser',3],['tac_light',2],['mz_ar_a2',1],['mz_ar_brake',2],['mz_12_choke',2],['mz_mos_brake',2],
+            ['ar_bbl_370',1],['ar_bbl_260',2],['ar_bbl_508',3],['mos_st_arch',3],['mnt_mos',2],['mnt_svd',2],
+            ['svd_hg_rail',4],['svd_st_chas',4],['556_m855',2],['556_m855a1',3],['556_m995',4],['556_hp',1],['556_tr',1],
+            ['12_buck',1],['12_slug',2],['12_flech',3],['12_ap20',4],['12_mag',1],
+            ['r_scav',1],['r_blackrock',2],['r_avs',3],['r_bank',3],['h_fast',3],['h_altyn',4],['a_gzhel',3],['a_slick',4],['a_zhuk',4] ] },
+];
+
+/* --- Levels --------------------------------------------------------------
+   Grids are extruded into 3D geometry. One cell is 3 m, so a 40x40 grid is a
+   120 m field — long enough that muzzle velocity and bullet drop matter.     */
+const MAPS = [
+  { id:'factory', name:'FACTORY', w:34, h:34, blurb:'Enclosed industrial plant. Corners everywhere, contact inside 30 m.',
+    style:'industrial', roofed:true,  enemies:[6,8],   raiderChance:0.20, bossChance:0.08,
+    containers:[14,20], lootBias:1.0,  extracts:2, keyExtract:'gate',   minLevel:1, fog:0.0130, sky:[0.13,0.14,0.14] },
+  { id:'customs', name:'CUSTOMS',  w:46, h:46, blurb:'Warehouses along a road. Mixed ranges, the most to loot.',
+    style:'town',      roofed:false, enemies:[8,11],  raiderChance:0.34, bossChance:0.14,
+    containers:[20,28], lootBias:1.25, extracts:3, keyExtract:'car',    minLevel:1, fog:0.0060, sky:[0.34,0.37,0.40] },
+  { id:'woods',   name:'WOODS',    w:54, h:54, blurb:'Open treeline. Engagements past 100 m — bring glass.',
+    style:'forest',    roofed:false, enemies:[7,10],  raiderChance:0.42, bossChance:0.18,
+    containers:[16,22], lootBias:1.15, extracts:3, keyExtract:null,     minLevel:3, fog:0.0040, sky:[0.46,0.50,0.47] },
+  { id:'labs',    name:'THE LAB',  w:38, h:38, blurb:'Sealed facility. Armoured raiders, the best loot on any map.',
+    style:'lab',       roofed:true,  enemies:[8,11],  raiderChance:0.70, bossChance:0.16,
+    containers:[22,30], lootBias:2.4,  extracts:2, keyExtract:'bunker', minLevel:8, fog:0.026, sky:[0.06,0.07,0.09] },
+];
+
+/* --- Enemy templates -----------------------------------------------------
+   sight    detection range in metres
+   react    seconds between acquiring you and the first shot
+   err      aiming error in degrees — the whole of AI difficulty lives here
+   burst    rounds per trigger pull, and the pause after it
+   speed    metres per second                                                */
+const ENEMY_TYPES = {
+  scav:     { name:'Scav',        hpMult:1.00, sight:55,  react:0.95, err:3.6, burst:[2,4], cool:[0.7,1.6], speed:2.5, xp:120,  tier:0, flee:0.35 },
+  marksman: { name:'Scav Sniper', hpMult:1.00, sight:110, react:1.30, err:1.1, burst:[1,1], cool:[1.4,2.6], speed:2.2, xp:220,  tier:1, flee:0.40 },
+  raider:   { name:'Raider',      hpMult:1.00, sight:75,  react:0.55, err:1.9, burst:[3,6], cool:[0.5,1.1], speed:3.4, xp:520,  tier:2, flee:0.20 },
+  boss:     { name:'Kolchak',     hpMult:1.35, sight:80,  react:0.45, err:1.5, burst:[4,7], cool:[0.4,0.9], speed:3.3, xp:1800, tier:3, flee:0.00 },
+  guard:    { name:'Boss Guard',  hpMult:1.10, sight:75,  react:0.60, err:2.1, burst:[3,5], cool:[0.5,1.2], speed:3.3, xp:700,  tier:2, flee:0.15 },
+};
+
+/* Gear packages the AI spawns with, by tier. */
+const AI_KITS = [
+  { guns:[['vpo','762_ps'],['saiga','12_buck'],['mosin','54_lps'],['vityaz','9_pst']],
+    armor:[null,null,'a_paca'], helm:[null,null,'h_ssh'], loot:[0,2] },
+  { guns:[['akm','762_ps'],['ak74n','545_ps'],['mosin','54_7n1'],['saiga','12_slug']],
+    armor:[null,'a_paca','a_6b13'], helm:[null,'h_ssh','h_6b47'], loot:[1,3] },
+  { guns:[['ak74n','545_bp'],['m4a1','556_m855a1'],['akm','762_bp'],['mp5','9_ap']],
+    armor:['a_6b23','a_6b13','r_avs'], helm:['h_6b47','h_fast'], loot:[2,4] },
+  { guns:[['m4a1','556_m995'],['ak74n','545_bs'],['svd','54_snb']],
+    armor:['a_slick','a_zhuk'], helm:['h_fast','h_altyn'], loot:[4,7] },
+];
+
+/* --- Tasks --------------------------------------------------------------- */
+const QUESTS = [
+  { id:'q1', trader:'prapor', name:'Debut',            desc:'Eliminate 5 Scavs.',                                 type:'kill',   target:5,  filter:{type:'scav'},          rub:35000,  xp:1200, unlock:1 },
+  { id:'q2', trader:'therapist', name:'Shortage',      desc:'Extract with 3 medical items found in raid.',        type:'extract_item', target:3, filter:{kind:'med'},     rub:42000,  xp:1500, unlock:1 },
+  { id:'q3', trader:'prapor', name:'Checking',         desc:'Survive and extract from Customs twice.',            type:'extract_map', target:2, filter:{map:'customs'},   rub:55000,  xp:2200, unlock:2 },
+  { id:'q4', trader:'mechanic', name:'Gunsmith I',     desc:'Build a weapon with ergonomics 60 or higher.',        type:'build',  target:1,  filter:{ergo:60},              rub:48000,  xp:1800, unlock:2 },
+  { id:'q5', trader:'skier', name:'Silent Caliber',    desc:'Kill 4 enemies using a suppressed weapon.',           type:'kill',   target:4,  filter:{suppressed:true},      rub:76000,  xp:2600, unlock:3 },
+  { id:'q6', trader:'mechanic', name:'Gunsmith II',    desc:'Build a weapon with vertical recoil 105 or lower.',   type:'build',  target:1,  filter:{rv:105},               rub:92000,  xp:3200, unlock:3 },
+  { id:'q7', trader:'prapor', name:'Punisher',         desc:'Kill 6 enemies wearing class 4 armour or better.',    type:'kill',   target:6,  filter:{armored:4},            rub:130000, xp:4500, unlock:4 },
+  { id:'q8', trader:'therapist', name:'Sanitary Zone', desc:'Extract from The Lab once.',                          type:'extract_map', target:1, filter:{map:'labs'},      rub:210000, xp:7000, unlock:4 },
+];
+/* ==========================================================================
+   SECTION 2 — CORE ENGINE
+   Vector and matrix maths, weapon stat resolution, attachment compatibility,
+   the body model, and the ballistics that every round in the game — yours and
+   theirs — is resolved through.
+   ========================================================================== */
+
+const clamp = (v,a,b) => v < a ? a : v > b ? b : v;
+const lerp  = (a,b,t) => a + (b-a)*t;
+const DEG = Math.PI/180;
+const CELL = 3;            // metres per grid cell
+const GRAVITY = 9.81;
+
+/* Seeded RNG, so ballistics can be tested deterministically. */
+function RNG(seed){
+  let s = seed >>> 0 || 1;
+  const next = () => { s ^= s<<13; s>>>=0; s ^= s>>17; s ^= s<<5; s>>>=0; return s / 4294967296; };
+  return {
+    next,
+    int:(a,b)=>a + Math.floor(next()*(b-a+1)),
+    range:(a,b)=>a + next()*(b-a),
+    chance:p=>next() < p,
+    pick:arr=>arr[Math.floor(next()*arr.length)],
+    shuffle(arr){ for(let i=arr.length-1;i>0;i--){ const j=Math.floor(next()*(i+1)); [arr[i],arr[j]]=[arr[j],arr[i]]; } return arr; },
+    weighted(pairs){ let t=0; for(const p of pairs) t+=p[1]; let r=next()*t;
+      for(const p of pairs){ r-=p[1]; if(r<=0) return p[0]; } return pairs[pairs.length-1][0]; },
+    // normal-ish deviate, for aiming error
+    gauss(){ return (next()+next()+next()+next()+next()+next()-3)/1.5; },
+  };
+}
+
+/* ------------------------------------------------------------------ *
+ *  Matrices — just enough for a first-person camera                   *
+ * ------------------------------------------------------------------ */
+function mat4(){ return new Float32Array([1,0,0,0, 0,1,0,0, 0,0,1,0, 0,0,0,1]); }
+function perspective(out, fovy, aspect, near, far){
+  const f = 1/Math.tan(fovy/2), nf = 1/(near-far);
+  out[0]=f/aspect; out[1]=0; out[2]=0;  out[3]=0;
+  out[4]=0; out[5]=f; out[6]=0; out[7]=0;
+  out[8]=0; out[9]=0; out[10]=(far+near)*nf; out[11]=-1;
+  out[12]=0; out[13]=0; out[14]=2*far*near*nf; out[15]=0;
+  return out;
+}
+function mat4Mul(out, a, b){
+  for(let i=0;i<4;i++){
+    const bi = i*4, b0=b[bi], b1=b[bi+1], b2=b[bi+2], b3=b[bi+3];
+    out[bi]   = b0*a[0] + b1*a[4] + b2*a[8]  + b3*a[12];
+    out[bi+1] = b0*a[1] + b1*a[5] + b2*a[9]  + b3*a[13];
+    out[bi+2] = b0*a[2] + b1*a[6] + b2*a[10] + b3*a[14];
+    out[bi+3] = b0*a[3] + b1*a[7] + b2*a[11] + b3*a[15];
+  }
+  return out;
+}
+/* View matrix from position, yaw and pitch — no lookAt needed. */
+function viewMatrix(out, x, y, z, yaw, pitch){
+  const cy = Math.cos(yaw), sy = Math.sin(yaw);
+  const cp = Math.cos(pitch), sp = Math.sin(pitch);
+  // right, up, forward for a yaw-then-pitch camera looking down -Z
+  const rx = cy,      ry = 0,   rz = -sy;
+  const ux = sy*sp,   uy = cp,  uz = cy*sp;
+  const fx = sy*cp,   fy = -sp, fz = cy*cp;
+  out[0]=rx; out[1]=ux; out[2]=fx;  out[3]=0;
+  out[4]=ry; out[5]=uy; out[6]=fy;  out[7]=0;
+  out[8]=rz; out[9]=uz; out[10]=fz; out[11]=0;
+  out[12]=-(rx*x+ry*y+rz*z);
+  out[13]=-(ux*x+uy*y+uz*z);
+  out[14]=-(fx*x+fy*y+fz*z);
+  out[15]=1;
+  return out;
+}
+function modelMatrix(out, x,y,z, sx,sy,sz, yaw){
+  const c = Math.cos(yaw||0), s = Math.sin(yaw||0);
+  out[0]=c*sx; out[1]=0;  out[2]=-s*sx; out[3]=0;
+  out[4]=0;    out[5]=sy; out[6]=0;     out[7]=0;
+  out[8]=s*sz; out[9]=0;  out[10]=c*sz; out[11]=0;
+  out[12]=x;   out[13]=y; out[14]=z;    out[15]=1;
+  return out;
+}
+/* Orient geometry from explicit axes — the viewmodel rides the camera basis,
+   so the weapon points wherever you are looking, pitch included. */
+function modelMatrixBasis(out, px,py,pz, rx,ry,rz, ux,uy,uz, fx,fy,fz, sx,sy,sz){
+  out[0]=rx*sx; out[1]=ry*sx; out[2]=rz*sx; out[3]=0;
+  out[4]=ux*sy; out[5]=uy*sy; out[6]=uz*sy; out[7]=0;
+  out[8]=fx*sz; out[9]=fy*sz; out[10]=fz*sz; out[11]=0;
+  out[12]=px;   out[13]=py;   out[14]=pz;   out[15]=1;
+  return out;
+}
+/* Unit forward vector for a yaw/pitch pair. */
+function forwardOf(yaw, pitch){
+  const cp = Math.cos(pitch);
+  return [ -Math.sin(yaw)*cp, Math.sin(pitch), -Math.cos(yaw)*cp ];
+}
+
+/* ------------------------------------------------------------------ *
+ *  Weapon building — compatibility                                    *
+ * ------------------------------------------------------------------ */
+function newGun(platId, name){
+  const p = ITEMS[platId];
+  return { plat:platId, mods:Object.assign({}, p.fixed||{}), ammo:defaultAmmo(p.cal),
+           name:name || p.name, uid:'g'+(Math.random()*1e9|0) };
+}
+function defaultAmmo(cal){
+  const list = AMMO.filter(a=>a.cal===cal).sort((a,b)=>a.price-b.price);
+  return list[Math.min(1,list.length-1)].id;
+}
+function installedParts(g){
+  const out = [];
+  for(const s in g.mods){ const m = ITEMS[g.mods[s]]; if(m) out.push(m); }
+  return out;
+}
+function providedSet(g){
+  const p = ITEMS[g.plat];
+  const set = new Set(p.base || []);
+  for(const m of installedParts(g)) for(const pr of m.provides) set.add(pr);
+  return set;
+}
+const REQ_LABEL = { rail:'a rail (dust cover, rail handguard or side mount)',
+                    lower:'a lower rail (rail handguard)',
+                    thread:'a threaded barrel' };
+function canInstall(g, mod){
+  const p = ITEMS[g.plat];
+  if(!p.slots.includes(mod.slot)) return { ok:false, why:'No '+mod.slot+' slot on this platform' };
+  if(mod.fits !== '*' && !mod.fits.includes(p.family)) return { ok:false, why:'Does not fit the '+p.name };
+  if(mod.requires){
+    const test = { plat:g.plat, mods:Object.assign({}, g.mods) };
+    delete test.mods[mod.slot];
+    if(!providedSet(test).has(mod.requires)) return { ok:false, why:'Requires '+(REQ_LABEL[mod.requires]||mod.requires) };
+  }
+  return { ok:true };
+}
+function dependentsOf(g, slot){
+  const test = { plat:g.plat, mods:Object.assign({}, g.mods) };
+  delete test.mods[slot];
+  const provided = providedSet(test);
+  const orphans = [];
+  for(const s in g.mods){
+    if(s === slot) continue;
+    const m = ITEMS[g.mods[s]];
+    if(m && m.requires && !provided.has(m.requires)) orphans.push(s);
+  }
+  return orphans;
+}
+
+/* Cyclic rate, rounds per minute. Semi-automatics are limited by how fast
+   you can pull the trigger; the Mosin by working the bolt. */
+const RPM = { akm:600, ak74n:650, m4a1:800, mp5:800, mpx:850, vpo:320,
+              vityaz:700, saiga:240, svd:300, mosin:48 };
+
+/* ------------------------------------------------------------------ *
+ *  Weapon building — derived statistics                               *
+ * ------------------------------------------------------------------ */
+function resolveWeapon(g){
+  const p = ITEMS[g.plat];
+  let ergo = p.ergo, rvPct = 0, rhPct = 0, moa = p.moa, w = p.w,
+      vel = p.vel, noise = p.noise, sight = p.sight, zoom = 1, cap = p.mag, suppressed = false;
+
+  for(const m of installedParts(g)){
+    ergo += m.ergo; rvPct += m.rv; rhPct += m.rh; moa += m.moa;
+    w += m.w; vel += m.vel; noise += m.noise;
+    if(m.sight) sight = Math.max(sight, m.sight);
+    if(m.zoom > zoom) zoom = m.zoom;
+    if(m.cap) cap = m.cap;
+    if(m.noise <= -30) suppressed = true;
+  }
+  ergo = clamp(Math.round(ergo), 5, 120);
+  const rv = Math.max(12, Math.round(p.rv * (1 + rvPct/100)));
+  const rh = Math.max(20, Math.round(p.rh * (1 + rhPct/100)));
+  moa = Math.max(0.35, +moa.toFixed(2));
+  const ammo = ITEMS[g.ammo] || ITEMS[defaultAmmo(p.cal)];
+
+  return {
+    id:g.uid, name:g.name || p.name, plat:p.id, platName:p.name, family:p.family,
+    cal:p.cal, ergo, rv, rh, moa, weight:+w.toFixed(2), vel:Math.round(vel),
+    noise:Math.max(12, Math.round(noise)), sight:Math.round(sight), zoom,
+    mag:cap, modes:p.modes, suppressed, rpm:RPM[p.id] || 600,
+    ammo:ammo.id, ammoName:ammo.name,
+
+    /* --- everything below is what the shooting actually uses --- */
+    // seconds to bring the sights up; ergonomics is the whole story
+    adsTime:  +clamp(0.62 - (ergo-40)*0.0040, 0.15, 0.85).toFixed(3),
+    // seconds to reload
+    reload:   +clamp(3.1 - (ergo-40)*0.017, 1.4, 4.2).toFixed(2),
+    // half-angle of the cone, in degrees, from mechanical dispersion alone
+    baseSpread: +(moa/60/2).toFixed(4),
+    // how far the muzzle climbs per round, degrees
+    kickV:    +(rv/160).toFixed(3),
+    kickH:    +(rh/900).toFixed(3),
+    // how fast the sights settle again
+    recover:  +clamp(4.2 + (ergo-40)*0.035, 2.4, 9.0).toFixed(2),
+    // standing, unaimed sway
+    sway:     +clamp(0.55 - (ergo-40)*0.0035, 0.10, 0.85).toFixed(3),
+  };
+}
+const FIRE_MODES = {
+  single:{ label:'SEMI',  rounds:1 },
+  burst: { label:'BURST', rounds:3 },
+  auto:  { label:'AUTO',  rounds:Infinity },
+};
+function totalWeight(kit){
+  let w = kit.gun ? kit.gun.weight : 0;
+  if(kit.armor)  w += ITEMS[kit.armor].w;
+  if(kit.helmet) w += ITEMS[kit.helmet].w;
+  if(kit.rig)    w += ITEMS[kit.rig].w;
+  w += (kit.spareMags||0) * 0.35;
+  for(const m of (kit.meds||[])) w += 0.35;
+  return +w.toFixed(2);
+}
+
+/* ------------------------------------------------------------------ *
+ *  The body — now actual geometry, not a probability table            *
+ * ------------------------------------------------------------------ */
+const LIMBS = ['head','thorax','stomach','larm','rarm','lleg','rleg'];
+const LIMB_MAX = { head:35, thorax:85, stomach:70, larm:60, rarm:60, lleg:65, rleg:65 };
+const LIMB_NAME = { head:'HEAD', thorax:'THORAX', stomach:'STOMACH', larm:'L ARM', rarm:'R ARM', lleg:'L LEG', rleg:'R LEG' };
+const VITAL = { head:true, thorax:true };
+
+/* Hitboxes for a 1.8 m figure standing at y = 0, as
+   [xOffset, yLow, yHigh, halfWidth, halfDepth]. A round that passes through
+   this volume hits that limb — there is no roll of the dice for location. */
+const HITBOX = {
+  lleg:    [-0.13, 0.00, 0.92, 0.13, 0.13],
+  rleg:    [ 0.13, 0.00, 0.92, 0.13, 0.13],
+  stomach: [ 0.00, 0.92, 1.18, 0.19, 0.15],
+  thorax:  [ 0.00, 1.18, 1.58, 0.22, 0.16],
+  larm:    [-0.30, 1.05, 1.56, 0.09, 0.11],
+  rarm:    [ 0.30, 1.05, 1.56, 0.09, 0.11],
+  head:    [ 0.00, 1.58, 1.80, 0.115,0.115],
+};
+const STANCE_SCALE = { stand:1.0, crouch:0.72, prone:0.42 };
+
+function newBody(mult){
+  const b = {};
+  for(const l of LIMBS) b[l] = { hp:Math.round(LIMB_MAX[l]*(mult||1)), max:Math.round(LIMB_MAX[l]*(mult||1)) };
+  return b;
+}
+function armorAt(ent, zone){
+  const cands = [];
+  for(const slot of ['helmet','armor','rig']){
+    const worn = ent[slot];
+    if(!worn || worn.dur <= 0) continue;
+    const it = ITEMS[worn.id];
+    if(it && it.zones && it.zones.includes(zone) && it.cls > 0) cands.push(worn);
+  }
+  if(!cands.length) return null;
+  cands.sort((a,b)=>ITEMS[b.id].cls - ITEMS[a.id].cls);
+  return cands[0];
+}
+
+/* ------------------------------------------------------------------ *
+ *  Ballistics                                                         *
+ * ------------------------------------------------------------------ */
+function penAtRange(pen, vel, metres){
+  const loss = (metres/100) * (900/Math.max(vel,150)) * 2.4;
+  return Math.max(pen*0.35, pen - loss);
+}
+/* Logistic curve on (penetration - armour resistance). A worn plate stops
+   far less than a fresh one. */
+function penChance(pen, cls, durFrac){
+  if(!cls) return 1;
+  const resist = cls * 10 * (0.30 + 0.70*clamp(durFrac,0,1));
+  return clamp(1/(1 + Math.exp(-(pen - resist)/7.5)), 0.01, 0.995);
+}
+
+/* Segment against an axis-aligned box — the slab method. Returns the
+   fraction along the segment at which it enters, or -1. */
+function segBox(px,py,pz, dx,dy,dz, minx,miny,minz, maxx,maxy,maxz){
+  let tmin = 0, tmax = 1;
+  for(let i=0;i<3;i++){
+    const p = i===0?px:i===1?py:pz;
+    const d = i===0?dx:i===1?dy:dz;
+    const lo = i===0?minx:i===1?miny:minz;
+    const hi = i===0?maxx:i===1?maxy:maxz;
+    if(Math.abs(d) < 1e-9){ if(p < lo || p > hi) return -1; continue; }
+    let t1 = (lo-p)/d, t2 = (hi-p)/d;
+    if(t1 > t2){ const tt=t1; t1=t2; t2=tt; }
+    if(t1 > tmin) tmin = t1;
+    if(t2 < tmax) tmax = t2;
+    if(tmin > tmax) return -1;
+  }
+  return tmin;
+}
+/* Which limb, if any, does this segment pass through first? */
+function segLimb(ent, px,py,pz, dx,dy,dz){
+  const sc = STANCE_SCALE[ent.stance] || 1;
+  let best = null, bestT = 2;
+  for(const l of LIMBS){
+    const [ox, lo, hi, hw, hd] = HITBOX[l];
+    // the figure yaws, so rotate the offset into world space
+    const c = Math.cos(ent.yaw||0), s = Math.sin(ent.yaw||0);
+    const cx = ent.x + ox*c, cz = ent.z + ox*s;
+    const t = segBox(px,py,pz, dx,dy,dz,
+                     cx-hw, ent.y + lo*sc, cz-hd,
+                     cx+hw, ent.y + hi*sc, cz+hd);
+    if(t >= 0 && t < bestT){ bestT = t; best = l; }
+  }
+  return best ? { limb:best, t:bestT } : null;
+}
+
+/* Resolve one round arriving at a body part. Shared by both sides. */
+function resolveImpact(R, ammo, target, zone, metres, log){
+  const plate = armorAt(target, zone);
+  const pen = penAtRange(ammo.pen, ammo.vel, metres);
+  let dmg = ammo.dmg * clamp(1 - metres/1400, 0.62, 1);
+  let penetrated = true, blocked = false;
+
+  if(plate){
+    const it = ITEMS[plate.id];
+    penetrated = R.chance(penChance(pen, it.cls, plate.dur / it.dur));
+    const wear = ammo.aDmg * dmg * (penetrated ? 0.45 : 1.0) * 0.16;
+    plate.dur = Math.max(0, plate.dur - wear);
+    if(penetrated) dmg *= clamp(0.55 + (pen - it.cls*10)/60, 0.55, 1);
+    else { dmg *= it.blunt * (1 - it.cls*0.02); blocked = true; }
+  }
+  if(penetrated && R.chance(ammo.frag) && zone !== 'head') dmg *= 1.5;
+  dmg = Math.round(dmg);
+
+  if(penetrated && target.effects){
+    if(R.chance(clamp(dmg/230, 0, 0.28))) addEffect(target,'heavy',zone);
+    else if(R.chance(0.30))               addEffect(target,'light',zone);
+    if((zone==='lleg'||zone==='rleg') && dmg > 32 && R.chance(0.22)) addEffect(target,'frac',zone);
+  }
+  const killed = applyDamage(target, zone, dmg, log);
+  return { dmg, zone, penetrated, blocked, killed, armorBroke: plate ? plate.dur <= 0 : false };
+}
+
+function applyDamage(ent, zone, dmg, log){
+  const part = ent.body[zone];
+  if(!part) return false;
+  const wasUp = part.hp > 0;
+  if(!wasUp && !VITAL[zone]){
+    ent.body.thorax.hp = Math.max(0, ent.body.thorax.hp - dmg*0.5);
+  } else {
+    part.hp -= dmg;
+    if(part.hp < 0){
+      const overflow = -part.hp;
+      part.hp = 0;
+      if(!VITAL[zone]) ent.body.thorax.hp = Math.max(0, ent.body.thorax.hp - overflow*0.5);
+      if(wasUp && log && !VITAL[zone]) log(LIMB_NAME[zone]+' destroyed', 'warn');
+    }
+  }
+  if(ent.body.head.hp <= 0 || ent.body.thorax.hp <= 0){ ent.alive = false; return true; }
+  return false;
+}
+function addEffect(ent, kind, zone){
+  if(!ent.effects) return;
+  if(kind === 'frac'){ ent.effects.frac[zone] = true; return; }
+  if(ent.effects.bleeds.some(b=>b.zone===zone && b.kind===kind)) return;
+  if(kind === 'heavy') ent.effects.bleeds = ent.effects.bleeds.filter(b=>!(b.zone===zone && b.kind==='light'));
+  ent.effects.bleeds.push({ kind, zone });
+}
+function hasEffect(ent, kind){
+  if(kind === 'frac') return Object.keys(ent.effects.frac).length > 0;
+  return ent.effects.bleeds.some(b=>b.kind===kind);
+}
+/* Bleeding runs on the clock now, not on turns. */
+function tickBleeds(ent, dt){
+  let total = 0;
+  for(const b of ent.effects.bleeds){
+    const d = (b.kind === 'heavy' ? 4.5 : 1.4) * dt;
+    total += d;
+    applyDamage(ent, b.zone, d, null);
+  }
+  return total;
+}
+function totalHP(e){ let a=0; for(const l of LIMBS) a += e.body[l].hp; return a; }
+function totalMaxHP(e){ let a=0; for(const l of LIMBS) a += e.body[l].max; return a; }
+
+/* ------------------------------------------------------------------ *
+ *  Spread — where the round actually goes                             *
+ * ------------------------------------------------------------------ */
+/* Half-angle of the cone in degrees, given what the shooter is doing. */
+function currentSpread(sh){
+  const w = sh.gun;
+  let s = w.baseSpread;
+  s += w.sway * (sh.ads ? 0.12 : 1.0);                     // aiming steadies the hold
+  s += (sh.speed || 0) * (sh.ads ? 0.055 : 0.11);          // moving opens it up
+  s += (sh.bloom || 0);                                     // consecutive rounds
+  if(sh.stance === 'crouch') s *= 0.78;
+  else if(sh.stance === 'prone') s *= 0.55;
+  if(sh.ads) s *= 0.45;
+  // a wrecked arm ruins the hold
+  const arms = (sh.body.larm.hp<=0?1:0) + (sh.body.rarm.hp<=0?1:0);
+  if(arms) s *= arms === 2 ? 2.6 : 1.7;
+  return Math.max(0.012, s);
+}
+/* A random direction inside the cone around `dir`. */
+function coneDir(R, dir, halfAngleDeg){
+  const a = halfAngleDeg * DEG;
+  // build a basis around dir
+  const [dx,dy,dz] = dir;
+  let ux = 0, uy = 1, uz = 0;
+  if(Math.abs(dy) > 0.99){ ux = 1; uy = 0; }
+  let rx = uy*dz - uz*dy, ry = uz*dx - ux*dz, rz = ux*dy - uy*dx;
+  let rl = Math.hypot(rx,ry,rz) || 1; rx/=rl; ry/=rl; rz/=rl;
+  let bx = dy*rz - dz*ry, by = dz*rx - dx*rz, bz = dx*ry - dy*rx;
+  const theta = R.next() * Math.PI * 2;
+  const r = Math.sqrt(R.next()) * Math.tan(a);
+  const ox = Math.cos(theta)*r, oy = Math.sin(theta)*r;
+  let vx = dx + rx*ox + bx*oy, vy = dy + ry*ox + by*oy, vz = dz + rz*ox + bz*oy;
+  const l = Math.hypot(vx,vy,vz) || 1;
+  return [vx/l, vy/l, vz/l];
+}
+
+/* The range at which this weapon still groups inside a 30 cm circle while
+   aimed, standing — shown in the workbench. */
+function effectiveRange(gunStats){
+  const dummy = { gun:gunStats, ads:true, speed:0, bloom:0, stance:'stand',
+                  body:newBody(1) };
+  const halfDeg = currentSpread(dummy);
+  const r = Math.tan(halfDeg*DEG);
+  return Math.round(clamp(0.15 / (r || 1e-6), 5, 900));
+}
+/* ==========================================================================
+   SECTION 3 — RENDERER
+   Raw WebGL2. One shader, one static world mesh, and a unit cube reused for
+   everything that moves. No libraries.
+   ========================================================================== */
+
+const VERT_SRC = `#version 300 es
+precision highp float;
+layout(location=0) in vec3 aPos;
+layout(location=1) in vec3 aNorm;
+layout(location=2) in vec3 aCol;
+uniform mat4 uProj, uView, uModel;
+out vec3 vNorm; out vec3 vCol; out float vDist; out vec3 vWorld;
+void main(){
+  vec4 world = uModel * vec4(aPos, 1.0);
+  vec4 eye = uView * world;
+  gl_Position = uProj * eye;
+  vNorm = mat3(uModel) * aNorm;
+  vCol = aCol;
+  vWorld = world.xyz;
+  vDist = length(eye.xyz);
+}`;
+
+const FRAG_SRC = `#version 300 es
+precision highp float;
+in vec3 vNorm; in vec3 vCol; in float vDist; in vec3 vWorld;
+uniform vec3 uSky; uniform float uFog;
+uniform vec3 uTint; uniform float uEmissive;
+uniform vec3 uMuzzle; uniform float uMuzzleI;
+out vec4 frag;
+void main(){
+  vec3 n = normalize(vNorm);
+  // a low key light plus sky fill — enough shape to read geometry
+  float key = max(dot(n, normalize(vec3(0.42, 0.86, 0.29))), 0.0);
+  float fill = 0.40 + 0.30 * (n.y * 0.5 + 0.5);
+  vec3 c = vCol * uTint * (0.16 + 0.92 * key + fill * 0.30);
+
+  // muzzle flash throws real light on nearby surfaces
+  if(uMuzzleI > 0.001){
+    vec3 d = uMuzzle - vWorld;
+    float dist = length(d);
+    float att = uMuzzleI / (1.0 + dist*dist*0.55);
+    c += vec3(1.0, 0.82, 0.48) * att * max(dot(n, normalize(d)), 0.0) * 2.2;
+  }
+  c = mix(c, c * 3.0, uEmissive);
+  float fog = 1.0 - exp(-vDist * uFog);
+  c = mix(c, uSky * (0.72 + 0.45 * clamp(vWorld.y / 14.0, 0.0, 1.0)), clamp(fog, 0.0, 1.0));
+  frag = vec4(c, 1.0);
+}`;
+
+let gl = null, prog = null, U = {};
+let worldVAO = null, worldCount = 0;
+let cubeVAO = null;
+const mProj = mat4(), mView = mat4(), mModel = mat4();
+
+function compile(type, src){
+  const s = gl.createShader(type);
+  gl.shaderSource(s, src);
+  gl.compileShader(s);
+  if(!gl.getShaderParameter(s, gl.COMPILE_STATUS)) throw new Error(gl.getShaderInfoLog(s));
+  return s;
+}
+function initGL(canvas){
+  gl = canvas.getContext('webgl2', { antialias:true, powerPreference:'high-performance' });
+  if(!gl) return false;
+  prog = gl.createProgram();
+  gl.attachShader(prog, compile(gl.VERTEX_SHADER, VERT_SRC));
+  gl.attachShader(prog, compile(gl.FRAGMENT_SHADER, FRAG_SRC));
+  gl.linkProgram(prog);
+  if(!gl.getProgramParameter(prog, gl.LINK_STATUS)) throw new Error(gl.getProgramInfoLog(prog));
+  gl.useProgram(prog);
+  for(const n of ['uProj','uView','uModel','uSky','uFog','uTint','uEmissive','uMuzzle','uMuzzleI'])
+    U[n] = gl.getUniformLocation(prog, n);
+  gl.enable(gl.DEPTH_TEST);
+  gl.enable(gl.CULL_FACE);
+  gl.cullFace(gl.BACK);
+  cubeVAO = makeVAO(unitCubeData());
+  return true;
+}
+function makeVAO(arr){
+  const vao = gl.createVertexArray();
+  gl.bindVertexArray(vao);
+  const buf = gl.createBuffer();
+  gl.bindBuffer(gl.ARRAY_BUFFER, buf);
+  gl.bufferData(gl.ARRAY_BUFFER, arr, gl.STATIC_DRAW);
+  const stride = 9*4;
+  gl.enableVertexAttribArray(0); gl.vertexAttribPointer(0, 3, gl.FLOAT, false, stride, 0);
+  gl.enableVertexAttribArray(1); gl.vertexAttribPointer(1, 3, gl.FLOAT, false, stride, 12);
+  gl.enableVertexAttribArray(2); gl.vertexAttribPointer(2, 3, gl.FLOAT, false, stride, 24);
+  gl.bindVertexArray(null);
+  return { vao, count: arr.length / 9 };
+}
+
+/* Six faces, outward normals, unit cube from (0,0,0) to (1,1,1). */
+const FACES = [
+  { n:[0,0,1],  v:[[0,0,1],[1,0,1],[1,1,1],[0,0,1],[1,1,1],[0,1,1]] },
+  { n:[0,0,-1], v:[[1,0,0],[0,0,0],[0,1,0],[1,0,0],[0,1,0],[1,1,0]] },
+  { n:[1,0,0],  v:[[1,0,1],[1,0,0],[1,1,0],[1,0,1],[1,1,0],[1,1,1]] },
+  { n:[-1,0,0], v:[[0,0,0],[0,0,1],[0,1,1],[0,0,0],[0,1,1],[0,1,0]] },
+  { n:[0,1,0],  v:[[0,1,1],[1,1,1],[1,1,0],[0,1,1],[1,1,0],[0,1,0]] },
+  { n:[0,-1,0], v:[[0,0,0],[1,0,0],[1,0,1],[0,0,0],[1,0,1],[0,0,1]] },
+];
+function unitCubeData(){
+  const out = [];
+  for(const f of FACES) for(const v of f.v) out.push(v[0]-0.5, v[1], v[2]-0.5, f.n[0], f.n[1], f.n[2], 1,1,1);
+  return new Float32Array(out);
+}
+/* Push one box into a vertex array, optionally skipping hidden faces. */
+function pushBox(out, x,y,z, w,h,d, col, skip){
+  for(let fi=0; fi<FACES.length; fi++){
+    if(skip && skip[fi]) continue;
+    const f = FACES[fi];
+    const shade = 1 + (f.n[1] > 0 ? 0.14 : f.n[1] < 0 ? -0.22 : (f.n[0] ? -0.06 : 0.04));
+    for(const v of f.v){
+      out.push(x + v[0]*w, y + v[1]*h, z + v[2]*d, f.n[0], f.n[1], f.n[2],
+               col[0]*shade, col[1]*shade, col[2]*shade);
+    }
+  }
+}
+
+/* ------------------------------------------------------------------ *
+ *  Static world geometry                                              *
+ * ------------------------------------------------------------------ */
+function buildWorldMesh(world){
+  const out = [];
+  const { w, h, cells, def } = world;
+  const R = RNG(world.seed ^ 0x9e3779b9);
+  const solid = (x,y) => (x<0||y<0||x>=w||y>=h) ? true : cells[y*w+x] === C.WALL;
+
+  const pal = WORLD_PAL[def.style];
+  for(let y=0;y<h;y++) for(let x=0;x<w;x++){
+    const t = cells[y*w+x];
+    const wx = x*CELL, wz = y*CELL;
+    const j = 0.90 + R.next()*0.20;
+
+    if(t !== C.WALL){
+      // floor
+      const fc = pal.floor.map(c => c*j);
+      out.push(
+        wx,0,wz+CELL,      0,1,0, fc[0],fc[1],fc[2],
+        wx+CELL,0,wz+CELL, 0,1,0, fc[0],fc[1],fc[2],
+        wx+CELL,0,wz,      0,1,0, fc[0],fc[1],fc[2],
+        wx,0,wz+CELL,      0,1,0, fc[0],fc[1],fc[2],
+        wx+CELL,0,wz,      0,1,0, fc[0],fc[1],fc[2],
+        wx,0,wz,           0,1,0, fc[0],fc[1],fc[2]);
+      if(def.roofed){
+        const cc = pal.roof.map(c => c*j);
+        const H = WALL_H;
+        out.push(
+          wx,H,wz,           0,-1,0, cc[0],cc[1],cc[2],
+          wx+CELL,H,wz,      0,-1,0, cc[0],cc[1],cc[2],
+          wx+CELL,H,wz+CELL, 0,-1,0, cc[0],cc[1],cc[2],
+          wx,H,wz,           0,-1,0, cc[0],cc[1],cc[2],
+          wx+CELL,H,wz+CELL, 0,-1,0, cc[0],cc[1],cc[2],
+          wx,H,wz+CELL,      0,-1,0, cc[0],cc[1],cc[2]);
+      }
+    }
+    if(t === C.WALL){
+      // only emit faces that something can actually see
+      const skip = [ solid(x,y+1), solid(x,y-1), solid(x+1,y), solid(x-1,y), false, true ];
+      pushBox(out, wx+CELL/2, 0, wz+CELL/2, CELL, WALL_H, CELL, pal.wall.map(c=>c*j), skip);
+    } else if(t === C.CRATE){
+      pushBox(out, wx+CELL/2, 0, wz+CELL/2, CELL*0.78, CRATE_H, CELL*0.78, pal.crate.map(c=>c*j));
+    } else if(t === C.TREE){
+      pushBox(out, wx+CELL/2, 0, wz+CELL/2, 0.5, WALL_H*1.5, 0.5, [0.20,0.15,0.10]);
+      pushBox(out, wx+CELL/2, WALL_H*1.1, wz+CELL/2, CELL*1.25, 2.6, CELL*1.25, [0.13*j,0.26*j,0.15*j]);
+    } else if(t === C.BUSH){
+      pushBox(out, wx+CELL/2, 0, wz+CELL/2, CELL*0.8, 1.05, CELL*0.8, [0.15*j,0.24*j,0.13*j]);
+    }
+  }
+  // loot containers and extraction pads are part of the level
+  for(const c of world.containers)
+    pushBox(out, c.x, 0, c.z, 1.0, 0.85, 0.9, c.opened ? [0.20,0.17,0.12] : [0.52,0.40,0.14]);
+  for(const e of world.extracts){
+    const col = e.key ? [0.55,0.44,0.16] : [0.16,0.46,0.26];
+    for(let i=0;i<4;i++){
+      const a = i*Math.PI/2;
+      pushBox(out, e.x + Math.cos(a)*e.r, 0, e.z + Math.sin(a)*e.r, 0.35, 2.4, 0.35, col);
+    }
+  }
+  const arr = new Float32Array(out);
+  if(worldVAO) gl.deleteVertexArray(worldVAO.vao);
+  worldVAO = makeVAO(arr);
+  worldCount = worldVAO.count;
+  return worldCount;
+}
+
+const WORLD_PAL = {
+  industrial:{ floor:[0.15,0.16,0.15], wall:[0.38,0.39,0.36], roof:[0.20,0.20,0.19], crate:[0.44,0.33,0.16] },
+  town:      { floor:[0.17,0.18,0.16], wall:[0.52,0.49,0.42], roof:[0.13,0.13,0.13], crate:[0.46,0.35,0.17] },
+  forest:    { floor:[0.13,0.19,0.11], wall:[0.42,0.40,0.33], roof:[0.13,0.13,0.13], crate:[0.40,0.31,0.16] },
+  lab:       { floor:[0.14,0.15,0.17], wall:[0.36,0.39,0.43], roof:[0.17,0.18,0.21], crate:[0.32,0.34,0.38] },
+};
+const WALL_H = 3.4, CRATE_H = 1.15;
+
+/* ------------------------------------------------------------------ *
+ *  Frame                                                              *
+ * ------------------------------------------------------------------ */
+function drawCube(x,y,z, w,h,d, col, yaw, emissive){
+  modelMatrix(mModel, x, y, z, w, h, d, yaw);
+  gl.uniformMatrix4fv(U.uModel, false, mModel);
+  gl.uniform3f(U.uTint, col[0], col[1], col[2]);
+  gl.uniform1f(U.uEmissive, emissive || 0);
+  gl.bindVertexArray(cubeVAO.vao);
+  gl.drawArrays(gl.TRIANGLES, 0, cubeVAO.count);
+}
+
+function renderFrame(cam){
+  const c = gl.canvas;
+  const aspect = c.width / c.height;
+  const sky = raid.def.sky;
+  gl.viewport(0, 0, c.width, c.height);
+  gl.clearColor(sky[0], sky[1], sky[2], 1);
+  gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+  gl.useProgram(prog);
+
+  perspective(mProj, cam.fov*DEG, aspect, 0.05, 400);
+  viewMatrix(mView, cam.x, cam.y, cam.z, cam.yaw, cam.pitch);
+  gl.uniformMatrix4fv(U.uProj, false, mProj);
+  gl.uniformMatrix4fv(U.uView, false, mView);
+  gl.uniform3f(U.uSky, sky[0], sky[1], sky[2]);
+  gl.uniform1f(U.uFog, raid.def.fog);
+  gl.uniform3f(U.uMuzzle, raid.flash.x, raid.flash.y, raid.flash.z);
+  gl.uniform1f(U.uMuzzleI, raid.flash.i);
+
+  // world
+  modelMatrix(mModel, 0,0,0, 1,1,1, 0);
+  gl.uniformMatrix4fv(U.uModel, false, mModel);
+  gl.uniform3f(U.uTint, 1,1,1);
+  gl.uniform1f(U.uEmissive, 0);
+  gl.bindVertexArray(worldVAO.vao);
+  gl.drawArrays(gl.TRIANGLES, 0, worldCount);
+
+  // hostiles, drawn as the same boxes the bullets are tested against
+  for(const e of raid.ents){
+    if(!e.alive || e.side === 'player') continue;
+    if(!e.seen) continue;
+    const sc = STANCE_SCALE[e.stance] || 1;
+    const base = ENEMY_PAL[e.type] || ENEMY_PAL.scav;
+    for(const l of LIMBS){
+      const [ox, lo, hi, hw, hd] = HITBOX[l];
+      const cs = Math.cos(e.yaw), sn = Math.sin(e.yaw);
+      const hurt = e.body[l].hp <= 0 ? 0.45 : 1;
+      const col = (l === 'head' ? base.head : base.body).map(v => v*hurt);
+      drawCube(e.x + ox*cs, e.y + lo*sc, e.z + ox*sn,
+               hw*2, (hi-lo)*sc, hd*2, col, e.yaw, 0);
+    }
+    // a helmet and a plate read at a glance, so you know what you are shooting
+    if(e.helmet && e.helmet.dur > 0){
+      const [ox, lo, hi, hw, hd] = HITBOX.head;
+      drawCube(e.x, e.y + lo*sc + 0.02, e.z, hw*2.35, (hi-lo)*sc*0.8, hd*2.35, [0.16,0.17,0.16], e.yaw, 0);
+    }
+    if(e.armor && e.armor.dur > 0){
+      const [ox, lo, hi, hw, hd] = HITBOX.thorax;
+      drawCube(e.x, e.y + lo*sc, e.z, hw*2.2, (hi-lo)*sc*0.92, hd*2.3, [0.13,0.14,0.13], e.yaw, 0);
+    }
+  }
+
+  // rounds in flight
+  for(const b of raid.bullets){
+    const col = b.tracer ? [1.0,0.55,0.18] : [0.85,0.78,0.55];
+    drawCube(b.x, b.y, b.z, 0.055, 0.055, 0.055, col, 0, b.tracer ? 1 : 0.35);
+  }
+  // impact sparks
+  for(const p of raid.parts)
+    drawCube(p.x, p.y, p.z, p.s, p.s, p.s, p.c, 0, p.e || 0);
+
+  // the weapon in your hands, drawn in view space
+  drawViewmodel(cam);
+}
+
+const ENEMY_PAL = {
+  scav:     { body:[0.46,0.38,0.24], head:[0.60,0.46,0.34] },
+  marksman: { body:[0.42,0.38,0.20], head:[0.58,0.48,0.30] },
+  raider:   { body:[0.28,0.31,0.27], head:[0.54,0.42,0.33] },
+  boss:     { body:[0.38,0.24,0.34], head:[0.58,0.44,0.38] },
+  guard:    { body:[0.33,0.29,0.25], head:[0.56,0.44,0.35] },
+};
+
+/* The gun is drawn relative to the camera on its own narrow projection, the
+   way every first-person shooter does it — otherwise a 30 cm object held
+   40 cm from your eye swallows the screen. */
+const mVmProj = mat4();
+function drawViewmodel(cam){
+  const p = raid.player;
+  if(!p.gun) return;
+  gl.clear(gl.DEPTH_BUFFER_BIT);                     // never clips into the world
+  const c = gl.canvas;
+  perspective(mVmProj, 48*DEG, c.width/c.height, 0.02, 12);
+  gl.uniformMatrix4fv(U.uProj, false, mVmProj);
+
+  // camera basis: the weapon rides all three axes, so it tracks pitch too
+  const f = forwardOf(cam.yaw, cam.pitch);
+  const rx = Math.cos(cam.yaw), ry = 0, rz = -Math.sin(cam.yaw);
+  const ux = ry*f[2] - rz*f[1], uy = rz*f[0] - rx*f[2], uz = rx*f[1] - ry*f[0];
+
+  const a = p.adsT;                                  // 0 at the hip, 1 sighted
+  const lateral = lerp(0.145, 0.0, a);
+  const drop    = lerp(-0.175, -0.072, a) + p.bobY*0.8;
+  const push    = lerp(0.88, 0.96, a) - p.recoilZ*0.9;
+  const sway    = p.swayX * (1-a);
+
+  const place = (fwdD, rgtD, upD, sx, sy, sz, col, emissive) => {
+    const px = cam.x + f[0]*fwdD + rx*rgtD + ux*upD;
+    const py = cam.y + f[1]*fwdD + ry*rgtD + uy*upD;
+    const pz = cam.z + f[2]*fwdD + rz*rgtD + uz*upD;
+    modelMatrixBasis(mModel, px, py, pz, rx,ry,rz, ux,uy,uz, f[0],f[1],f[2], sx, sy, sz);
+    gl.uniformMatrix4fv(U.uModel, false, mModel);
+    gl.uniform3f(U.uTint, col[0], col[1], col[2]);
+    gl.uniform1f(U.uEmissive, emissive || 0);
+    gl.bindVertexArray(cubeVAO.vao);
+    gl.drawArrays(gl.TRIANGLES, 0, cubeVAO.count);
+  };
+
+  const w = p.gun;
+  const wood  = [0.52,0.34,0.17], poly = [0.30,0.30,0.28], metal = [0.40,0.41,0.39];
+  const stockCol = (w.family === 'ak' || w.family === 'mosin') ? wood : poly;
+  const L = lateral + sway;
+
+  place(push,        L, drop,          0.046, 0.066, 0.23, poly);       // receiver
+  place(push - 0.18, L, drop - 0.010,  0.042, 0.055, 0.18, stockCol);   // stock
+  place(push + 0.20, L, drop + 0.004,  0.030, 0.032, 0.21, metal);      // barrel
+  place(push + 0.02, L, drop - 0.092,  0.035, 0.100, 0.048, poly);      // magazine
+  place(push + 0.12, L, drop - 0.048,  0.026, 0.062, 0.044, poly);      // grip
+  if(w.zoom > 1 || w.sight > 60)
+    place(push + 0.03, L, drop + 0.055, 0.032, 0.032, 0.12, [0.18,0.18,0.18]);
+  if(w.suppressed)
+    place(push + 0.36, L, drop + 0.004, 0.040, 0.040, 0.15, [0.22,0.22,0.22]);
+  if(raid.flash.i > 0.02 && !w.suppressed){
+    const s = 0.035 + raid.flash.i * 0.045;
+    place(push + 0.34, L, drop + 0.004, s, s, s*1.4, [1.0,0.78,0.38], 1);
+  }
+  gl.uniformMatrix4fv(U.uProj, false, mProj);        // restore for the next frame
+}
+/* ==========================================================================
+   SECTION 4 — THE WORLD
+   Grid generation, extrusion into 3D, collision, line of sight and navigation.
+   ========================================================================== */
+
+const C = { FLOOR:0, WALL:1, CRATE:2, TREE:3, BUSH:4 };
+const BLOCKS_MOVE = t => t === C.WALL || t === C.TREE;
+const CRATE_TOP = CRATE_H;
+
+function generateWorld(def, seed){
+  const R = RNG(seed);
+  const w = def.w, h = def.h;
+  const cells = new Uint8Array(w*h);
+  const at = (x,y) => (x<0||y<0||x>=w||y>=h) ? C.WALL : cells[y*w+x];
+  const set = (x,y,v) => { if(x>=0&&y>=0&&x<w&&y<h) cells[y*w+x] = v; };
+
+  for(let y=0;y<h;y++) for(let x=0;x<w;x++)
+    set(x, y, (x===0||y===0||x===w-1||y===h-1) ? C.WALL : C.FLOOR);
+
+  /* --- buildings --- */
+  const rooms = [];
+  const want = def.style==='forest' ? 6 : def.style==='lab' ? 14 : def.style==='industrial' ? 11 : 12;
+  for(let a=0; a<want*8 && rooms.length<want; a++){
+    const rw = R.int(5, def.style==='lab'?8:11), rh = R.int(5, def.style==='lab'?8:10);
+    const x = R.int(2, w-rw-2), y = R.int(2, h-rh-2);
+    if(rooms.some(r => x < r.x+r.w+2 && x+rw+2 > r.x && y < r.y+r.h+2 && y+rh+2 > r.y)) continue;
+    for(let j=y;j<y+rh;j++) for(let i=x;i<x+rw;i++){
+      const edge = (i===x||j===y||i===x+rw-1||j===y+rh-1);
+      set(i, j, edge ? C.WALL : C.FLOOR);
+    }
+    // doorways, at least two so nothing is a dead end
+    for(let d=0; d<R.int(2,3); d++){
+      const side = R.int(0,3);
+      if(side===0){ const dx=R.int(x+1,x+rw-2); set(dx,y,C.FLOOR); }
+      if(side===1){ const dx=R.int(x+1,x+rw-2); set(dx,y+rh-1,C.FLOOR); }
+      if(side===2){ const dy=R.int(y+1,y+rh-2); set(x,dy,C.FLOOR); }
+      if(side===3){ const dy=R.int(y+1,y+rh-2); set(x+rw-1,dy,C.FLOOR); }
+    }
+    rooms.push({ x, y, w:rw, h:rh });
+  }
+  // interior maps get corridors so the building block is navigable
+  if(def.style==='lab' || def.style==='industrial'){
+    for(let i=1;i<rooms.length;i++){
+      const a = rooms[i-1], b = rooms[i];
+      const ax = a.x+(a.w>>1), ay = a.y+(a.h>>1), bx = b.x+(b.w>>1), by = b.y+(b.h>>1);
+      for(let x=Math.min(ax,bx); x<=Math.max(ax,bx); x++) set(x, ay, C.FLOOR);
+      for(let y=Math.min(ay,by); y<=Math.max(ay,by); y++) set(bx, y, C.FLOOR);
+    }
+  }
+
+  /* --- scenery --- */
+  if(def.style==='forest'){
+    for(let c=0;c<Math.round(w*h*0.028);c++){
+      const cx = R.int(2,w-3), cy = R.int(2,h-3), n = R.int(4,12);
+      for(let i=0;i<n;i++){
+        const x = clamp(cx+R.int(-3,3),1,w-2), y = clamp(cy+R.int(-3,3),1,h-2);
+        if(at(x,y)===C.FLOOR) set(x,y, R.chance(0.55) ? C.TREE : C.BUSH);
+      }
+    }
+  }
+  const crates = def.style==='forest' ? Math.round(w*h*0.012) : Math.round(w*h*0.042);
+  for(let i=0;i<crates;i++){
+    const x = R.int(1,w-2), y = R.int(1,h-2);
+    if(at(x,y)===C.FLOOR) set(x,y,C.CRATE);
+  }
+
+  /* --- connectivity: nothing sealed off --- */
+  const open = [];
+  for(let y=1;y<h-1;y++) for(let x=1;x<w-1;x++) if(!BLOCKS_MOVE(at(x,y))) open.push([x,y]);
+  const seen = new Set([open[0][1]*w+open[0][0]]);
+  const stack = [open[0]];
+  while(stack.length){
+    const [x,y] = stack.pop();
+    for(const [dx,dy] of [[1,0],[-1,0],[0,1],[0,-1]]){
+      const nx=x+dx, ny=y+dy, k=ny*w+nx;
+      if(nx<1||ny<1||nx>=w-1||ny>=h-1||seen.has(k)||BLOCKS_MOVE(at(nx,ny))) continue;
+      seen.add(k); stack.push([nx,ny]);
+    }
+  }
+  for(const [x,y] of open) if(!seen.has(y*w+x)) set(x,y,C.FLOOR);
+
+  const free = [];
+  for(let y=1;y<h-1;y++) for(let x=1;x<w-1;x++) if(at(x,y)===C.FLOOR) free.push([x,y]);
+  R.shuffle(free);
+
+  return { def, w, h, cells, seed, rooms, free, R,
+           at, set, containers:[], extracts:[] };
+}
+
+/* ------------------------------------------------------------------ *
+ *  Collision                                                          *
+ * ------------------------------------------------------------------ */
+const cellOf = m => Math.floor(m / CELL);
+
+/* Is this world point inside solid geometry, at this height? */
+function solidAt(world, x, y, z){
+  const t = world.at(cellOf(x), cellOf(z));
+  if(t === C.WALL) return y < WALL_H;
+  if(t === C.CRATE) return y < CRATE_TOP;
+  if(t === C.TREE){
+    // only the trunk blocks, and it is thin
+    const cx = (cellOf(x)+0.5)*CELL, cz = (cellOf(z)+0.5)*CELL;
+    return Math.hypot(x-cx, z-cz) < 0.32;
+  }
+  return false;
+}
+/* Move a capsule of the given radius, sliding along whatever it hits. */
+function moveWithCollision(world, ent, dx, dz, radius, feetY){
+  const probe = (px, pz) => {
+    for(let a=0; a<8; a++){
+      const t = a * Math.PI/4;
+      if(solidAt(world, px + Math.cos(t)*radius, feetY + 0.55, pz + Math.sin(t)*radius)) return true;
+    }
+    return solidAt(world, px, feetY + 0.55, pz);
+  };
+  if(dx && !probe(ent.x + dx, ent.z)) ent.x += dx;
+  if(dz && !probe(ent.x, ent.z + dz)) ent.z += dz;
+  ent.x = clamp(ent.x, CELL*1.2, (world.w-1.2)*CELL);
+  ent.z = clamp(ent.z, CELL*1.2, (world.h-1.2)*CELL);
+}
+/* Standing on a crate raises you onto it. */
+function groundHeight(world, x, z){
+  return world.at(cellOf(x), cellOf(z)) === C.CRATE ? CRATE_TOP : 0;
+}
+
+/* ------------------------------------------------------------------ *
+ *  Line of sight and bullet tracing                                   *
+ * ------------------------------------------------------------------ */
+/* March a segment through the world; returns the distance at which it is
+   stopped, or -1 if it reaches the end. Bushes do not stop rounds. */
+function traceWorld(world, x,y,z, dx,dy,dz, maxDist){
+  const step = 0.22;
+  const n = Math.ceil(maxDist/step);
+  for(let i=1;i<=n;i++){
+    const t = Math.min(i*step, maxDist);
+    const px = x+dx*t, py = y+dy*t, pz = z+dz*t;
+    if(py < 0) return t;
+    if(py > WALL_H && world.def.roofed) return t;
+    if(solidAt(world, px, py, pz)) return t;
+  }
+  return -1;
+}
+function hasLOS(world, x1,y1,z1, x2,y2,z2){
+  const dx = x2-x1, dy = y2-y1, dz = z2-z1;
+  const d = Math.hypot(dx,dy,dz);
+  if(d < 0.001) return true;
+  return traceWorld(world, x1,y1,z1, dx/d, dy/d, dz/d, d - 0.15) < 0;
+}
+
+/* ------------------------------------------------------------------ *
+ *  Navigation                                                         *
+ * ------------------------------------------------------------------ */
+function findPath(world, sx, sy, tx, ty, maxNodes){
+  maxNodes = maxNodes || 2600;
+  const { w, h } = world;
+  const key = (x,y) => y*w + x;
+  const dist = (a,b,c,d) => Math.max(Math.abs(a-c), Math.abs(b-d));
+  if(BLOCKS_MOVE(world.at(tx,ty))) return null;
+  const open = [{x:sx,y:sy,g:0,f:dist(sx,sy,tx,ty),p:null}];
+  const best = new Map([[key(sx,sy), 0]]);
+  let nodes = 0;
+  while(open.length && nodes++ < maxNodes){
+    let bi = 0;
+    for(let i=1;i<open.length;i++) if(open[i].f < open[bi].f) bi = i;
+    const cur = open.splice(bi,1)[0];
+    if(cur.x===tx && cur.y===ty){
+      const path = []; let n = cur;
+      while(n.p){ path.unshift([n.x,n.y]); n = n.p; }
+      return path;
+    }
+    for(let dy=-1;dy<=1;dy++) for(let dx=-1;dx<=1;dx++){
+      if(!dx && !dy) continue;
+      const nx = cur.x+dx, ny = cur.y+dy;
+      if(nx<1||ny<1||nx>=w-1||ny>=h-1) continue;
+      if(BLOCKS_MOVE(world.at(nx,ny))) continue;
+      if(dx && dy && (BLOCKS_MOVE(world.at(cur.x+dx,cur.y)) || BLOCKS_MOVE(world.at(cur.x,cur.y+dy)))) continue;
+      const g = cur.g + (dx&&dy ? 1.41 : 1) + (world.at(nx,ny)===C.CRATE ? 1.2 : 0);
+      const k = key(nx,ny);
+      if(best.has(k) && best.get(k) <= g) continue;
+      best.set(k, g);
+      open.push({ x:nx, y:ny, g, f:g + dist(nx,ny,tx,ty), p:cur });
+    }
+  }
+  return null;
+}
+/* ==========================================================================
+   SECTION 5 — PERSISTENT STATE AND THE RAID
+   ========================================================================== */
+
+const SAVE_KEY = 'exfil_fps_v1';
+let G = null, raid = null;
+let uidCounter = 1;
+const uid = () => 'i' + (uidCounter++) + '_' + (Math.random()*1e6|0);
+
+/* ------------------------------------------------------------------ *
+ *  Stash and progression                                              *
+ * ------------------------------------------------------------------ */
+function newSave(){
+  const s = { rub:250000, xp:0, level:1, stash:[], guns:[], loadout:null,
+              quests:{}, spend:{}, raids:{ run:0, survived:0, kills:0 }, ver:1 };
+  QUESTS.forEach(q => s.quests[q.id] = { prog:0, done:false });
+  const akm = newGun('akm', 'AKM');
+  akm.ammo = '762_ps';
+  s.guns.push(akm);
+  const add = (id,n,dur) => stashAdd(s,id,n,dur);
+  add('762_ps', 120); add('762_hp', 60);
+  add('m_bandage', 2); add('m_splint', 1); add('m_ai2', 2);
+  add('r_scav', 1);
+  add('a_paca', 1, ITEMS['a_paca'].dur);
+  add('h_ssh', 1, ITEMS['h_ssh'].dur);
+  return s;
+}
+function stashAdd(save, id, n, dur){
+  const it = ITEMS[id];
+  if(!it) return;
+  n = n || 1;
+  const perInstance = (dur !== undefined) || it.type==='armor' || it.type==='helmet' || (it.type==='rig' && it.cls>0);
+  if(perInstance){
+    for(let i=0;i<n;i++) save.stash.push({ uid:uid(), id, n:1, dur: dur !== undefined ? dur : (it.dur||0) });
+    return;
+  }
+  const ex = save.stash.find(e => e.id === id && e.dur === undefined);
+  if(ex) ex.n += n; else save.stash.push({ uid:uid(), id, n });
+}
+function stashCount(save, id){ return save.stash.filter(e=>e.id===id).reduce((a,e)=>a+e.n,0); }
+function stashRemove(save, id, n){
+  n = n || 1;
+  for(let i = save.stash.length-1; i >= 0 && n > 0; i--){
+    const e = save.stash[i];
+    if(e.id !== id) continue;
+    const take = Math.min(e.n, n);
+    e.n -= take; n -= take;
+    if(e.n <= 0) save.stash.splice(i,1);
+  }
+  return n === 0;
+}
+function stashRemoveUid(save, u){
+  const i = save.stash.findIndex(e=>e.uid===u);
+  return i >= 0 ? save.stash.splice(i,1)[0] : null;
+}
+function findStash(save, u){ return save.stash.find(e=>e.uid===u); }
+
+function xpForLevel(n){ return Math.round(900 * Math.pow(n, 1.55)); }
+function levelFromXp(xp){
+  let lv = 1, need = xpForLevel(1), acc = 0;
+  while(acc + need <= xp && lv < 60){ acc += need; lv++; need = xpForLevel(lv); }
+  return { level:lv, into:xp-acc, need };
+}
+function refreshLevel(){ const l = levelFromXp(G.xp); G.level = l.level; return l; }
+function traderLoyalty(tid){
+  const spend = G.spend[tid] || 0;
+  const REQ_SPEND = [0,0,120000,450000,1100000], REQ_LVL = [0,1,6,12,20];
+  let lv = 1;
+  for(let i=2;i<=4;i++) if(spend >= REQ_SPEND[i] && G.level >= REQ_LVL[i]) lv = i;
+  return lv;
+}
+function save(){ try { localStorage.setItem(SAVE_KEY, JSON.stringify(G)); } catch(e){} }
+function load(){
+  try {
+    const raw = localStorage.getItem(SAVE_KEY);
+    if(raw){
+      const s = JSON.parse(raw);
+      if(s && s.ver === 1){
+        QUESTS.forEach(q => { if(!s.quests[q.id]) s.quests[q.id] = { prog:0, done:false }; });
+        return s;
+      }
+    }
+  } catch(e){}
+  return newSave();
+}
+
+/* ------------------------------------------------------------------ *
+ *  Entities                                                           *
+ * ------------------------------------------------------------------ */
+const EYE = { stand:1.66, crouch:1.14, prone:0.52 };
+const MOVE_SPEED = { stand:3.9, crouch:1.9, prone:0.9 };
+
+function makeEntity(o){
+  return Object.assign({
+    x:0, y:0, z:0, yaw:0, pitch:0, stance:'stand', alive:true, side:'ai',
+    body:newBody(1), effects:{ bleeds:[], frac:{}, painkiller:0 },
+    speed:0, bloom:0, ads:false, adsT:0, magLoaded:0, spareMags:0,
+    armor:null, helmet:null, rig:null, seen:true,
+  }, o);
+}
+function buildPlayer(lo){
+  const gun = lo.gunObj ? resolveWeapon(lo.gunObj) : null;
+  const p = makeEntity({
+    side:'player', name:'You', gun,
+    magLoaded: gun ? gun.mag : 0, spareMags: lo.mags || 0,
+    meds: (lo.meds||[]).map(id => ({ id, pool: ITEMS[id].pool })),
+    vy:0, onGround:true, stamina:1, bobY:0, bobT:0, swayX:0,
+    recoilP:0, recoilY:0, recoilZ:0, fireCd:0, burstLeft:0, reloadT:0, medT:0, medUse:null,
+  });
+  if(lo.armor)  { const s = findStash(G, lo.armor);  if(s) p.armor  = { id:s.id, dur:s.dur, uid:s.uid }; }
+  if(lo.helmet) { const s = findStash(G, lo.helmet); if(s) p.helmet = { id:s.id, dur:s.dur, uid:s.uid }; }
+  if(lo.rig)    { const s = findStash(G, lo.rig);    if(s) p.rig    = { id:s.id, dur:s.dur||0, uid:s.uid }; }
+  p.loadKg = totalWeight({ gun, armor:p.armor&&p.armor.id, helmet:p.helmet&&p.helmet.id,
+                           rig:p.rig&&p.rig.id, spareMags:p.spareMags, meds:lo.meds||[] });
+  // armour bulk costs weapon handling, exactly as in the workbench preview
+  let ergoPen = 0;
+  for(const s of ['armor','helmet','rig']) if(p[s]) ergoPen += (ITEMS[p[s].id].ergo || 0);
+  p.ergoPen = ergoPen;
+  if(gun && ergoPen) applyErgoPenalty(gun, ergoPen);
+  return p;
+}
+/* Re-derive the handling numbers after armour bulk is taken into account. */
+function applyErgoPenalty(gun, pen){
+  gun.ergo = clamp(gun.ergo + pen, 5, 120);
+  gun.adsTime = +clamp(0.62 - (gun.ergo-40)*0.0040, 0.15, 0.85).toFixed(3);
+  gun.reload  = +clamp(3.1 - (gun.ergo-40)*0.017, 1.4, 4.2).toFixed(2);
+  gun.recover = +clamp(4.2 + (gun.ergo-40)*0.035, 2.4, 9.0).toFixed(2);
+  gun.sway    = +clamp(0.55 - (gun.ergo-40)*0.0035, 0.10, 0.85).toFixed(3);
+}
+function speedOf(ent){
+  let s = MOVE_SPEED[ent.stance];
+  const load = ent.loadKg || 0;
+  s *= clamp(1 - Math.max(0, load - 16)*0.020, 0.55, 1);
+  const legs = (ent.body.lleg.hp<=0?1:0) + (ent.body.rleg.hp<=0?1:0);
+  if(legs && !ent.effects.painkiller) s *= legs === 2 ? 0.42 : 0.68;
+  if(hasEffect(ent,'frac') && !ent.effects.painkiller) s *= 0.72;
+  return s;
+}
+
+function spawnEnemy(R, type, cx, cy){
+  const t = ENEMY_TYPES[type];
+  const kit = AI_KITS[Math.min(t.tier, AI_KITS.length-1)];
+  const [platId, ammoId] = R.pick(kit.guns);
+  const g = newGun(platId);
+  g.ammo = ammoId;
+  if(t.tier >= 2){
+    const op = MODS.filter(m => m.slot==='optic' && canInstall(g,m).ok);
+    if(op.length && R.chance(0.7)) g.mods.optic = R.pick(op).id;
+    const fg = MODS.filter(m => m.slot==='foregrip' && canInstall(g,m).ok);
+    if(fg.length && R.chance(0.5)) g.mods.foregrip = R.pick(fg).id;
+  }
+  if(type === 'marksman'){
+    const mn = MODS.filter(m => m.slot==='mount' && canInstall(g,m).ok);
+    if(mn.length) g.mods.mount = mn[0].id;
+    const sc = MODS.filter(m => m.slot==='optic' && m.zoom>=4 && canInstall(g,m).ok);
+    if(sc.length) g.mods.optic = R.pick(sc).id;
+  }
+  const gun = resolveWeapon(g);
+  const armorId = R.pick(kit.armor), helmId = R.pick(kit.helm);
+  const e = makeEntity({
+    side:'ai', type, name:t.name, tmpl:t, gunObj:g, gun,
+    x:(cx+0.5)*CELL, y:0, z:(cy+0.5)*CELL, yaw:R.next()*Math.PI*2,
+    body:newBody(t.hpMult), magLoaded:gun.mag, spareMags:R.int(2,4),
+    armor: armorId ? { id:armorId, dur:ITEMS[armorId].dur } : null,
+    helmet: helmId ? { id:helmId, dur:ITEMS[helmId].dur } : null,
+    xp:t.xp, dropLoot:R.int(kit.loot[0], kit.loot[1]),
+    state:'patrol', reactT:0, coolT:0, burstLeft:0, fireCd:0, reloadT:0,
+    lastKnown:null, searchT:0, repathT:0, path:null, strafe:R.chance(0.5)?1:-1, strafeT:0,
+  });
+  if(t.tier === 0 && R.chance(0.3)) e.stance = 'crouch';
+  return e;
+}
+
+/* ------------------------------------------------------------------ *
+ *  Starting a raid                                                    *
+ * ------------------------------------------------------------------ */
+function startRaid(mapId, lo){
+  const def = MAPS.find(m => m.id === mapId);
+  const seed = (Math.random()*4294967295)>>>0;
+  const world = generateWorld(def, seed);
+  const R = world.R;
+  const free = world.free;
+
+  const player = buildPlayer(lo);
+  const spawn = free.pop();
+  player.x = (spawn[0]+0.5)*CELL; player.z = (spawn[1]+0.5)*CELL; player.y = 0;
+  player.yaw = R.next()*Math.PI*2;
+
+  // extraction zones, placed far from where you came in
+  const far = free.filter(([x,y]) => Math.hypot((x+0.5)*CELL - player.x, (y+0.5)*CELL - player.z) > Math.min(def.w,def.h)*CELL*0.42);
+  R.shuffle(far);
+  for(let i=0;i<def.extracts && i<far.length;i++){
+    const [x,y] = far[i];
+    const needsKey = (i === def.extracts-1) && def.keyExtract;
+    world.extracts.push({ x:(x+0.5)*CELL, z:(y+0.5)*CELL, r:3.2,
+                          name: needsKey ? 'LOCKED EXFIL' : 'EXFIL '+String.fromCharCode(65+i),
+                          key: needsKey ? def.keyExtract : null });
+  }
+  // loot containers
+  const nc = R.int(def.containers[0], def.containers[1]);
+  for(let i=0;i<nc && free.length;i++){
+    const [x,y] = free.pop();
+    const wx = (x+0.5)*CELL, wz = (y+0.5)*CELL;
+    if(Math.hypot(wx-player.x, wz-player.z) < 10){ i--; continue; }
+    world.containers.push({ x:wx, z:wz, opened:false, items:rollContainer(R, def) });
+  }
+  // hostiles
+  const ents = [player];
+  const ne = R.int(def.enemies[0], def.enemies[1]);
+  for(let i=0;i<ne && free.length;i++){
+    const [x,y] = free.pop();
+    const wx = (x+0.5)*CELL, wz = (y+0.5)*CELL;
+    if(Math.hypot(wx-player.x, wz-player.z) < 34){ i--; continue; }
+    let type = 'scav';
+    if(R.chance(def.raiderChance)) type = 'raider';
+    else if(R.chance(0.20)) type = 'marksman';
+    ents.push(spawnEnemy(R, type, x, y));
+  }
+  if(R.chance(def.bossChance) && free.length > 4){
+    const [bx,by] = free.pop();
+    ents.push(spawnEnemy(R,'boss',bx,by));
+    for(let i=0;i<2 && free.length;i++){ const [gx,gy] = free.pop(); ents.push(spawnEnemy(R,'guard',gx,gy)); }
+  }
+
+  raid = {
+    def, world, R, seed, ents, player, bullets:[], parts:[], bag:[], kills:[],
+    over:false, result:null, log:[], time:0, extractT:0, inExtract:null,
+    mode: player.gun ? player.gun.modes[0] : 'single',
+    flash:{ x:0,y:0,z:0, i:0 }, hitMark:0, hurtDir:0, hurtT:0, nearContainer:null,
+    startKit:{ gunUid:lo.gun, armor:lo.armor, helmet:lo.helmet, rig:lo.rig,
+               meds:(lo.meds||[]).slice(), mags:lo.mags||0, ammoId: lo.gunObj ? lo.gunObj.ammo : null },
+  };
+  buildWorldMesh(world);
+  rlog('Inserted into '+def.name+'. '+ne+' hostiles expected.', 'sys');
+  rlog('Reach an extraction point to keep what you are carrying.', 'sys');
+  return raid;
+}
+
+function rollContainer(R, def){
+  const out = [];
+  for(let i=0, n=R.int(1,3); i<n; i++){
+    const roll = R.next();
+    if(roll < 0.34){
+      out.push({ id:R.weighted(LOOT.map(l => [l.id, Math.max(0.4, (8-l.rar) * (l.rar>=4 ? def.lootBias : 1))])), n:1 });
+    } else if(roll < 0.58){
+      const a = R.pick(AMMO.filter(x => x.price < 400*def.lootBias));
+      out.push({ id:a.id, n:R.int(15,45) });
+    } else if(roll < 0.74){
+      out.push({ id:R.pick(MEDS.filter(x => x.price < 24000*def.lootBias)).id, n:1 });
+    } else if(roll < 0.90){
+      out.push({ id:R.pick(MODS.filter(x => x.price < 30000*def.lootBias)).id, n:1 });
+    } else {
+      const it = R.pick(ARMOR.filter(x => x.price < 70000*def.lootBias));
+      out.push({ id:it.id, n:1, dur:Math.round(it.dur * (0.35 + R.next()*0.5)) });
+    }
+  }
+  if(def.keyExtract && R.chance(0.12))
+    out.push({ id:'k_'+({car:'dorm',gate:'gate',bunker:'bunker'})[def.keyExtract], n:1 });
+  return out;
+}
+function rlog(msg, cls){
+  raid.log.push({ msg, cls:cls||'', t:raid.time });
+  if(raid.log.length > 90) raid.log.shift();
+}
+
+/* ------------------------------------------------------------------ *
+ *  Shooting                                                           *
+ * ------------------------------------------------------------------ */
+function spawnBullet(sh, ox,oy,oz, dir, ammo, spreadDeg){
+  const R = raid.R;
+  const d = coneDir(R, dir, spreadDeg);
+  const v = ammo.vel;
+  raid.bullets.push({
+    x:ox, y:oy, z:oz, vx:d[0]*v, vy:d[1]*v, vz:d[2]*v,
+    owner:sh, ammo:ammo.id, dist:0, life:3.0,
+    tracer: /_t$|_tr$|_gt$/.test(ammo.id) || ammo.id === '556_tr',
+  });
+}
+function makeNoise(x, z, radius, source){
+  for(const e of raid.ents){
+    if(!e.alive || e === source || e.side === 'player') continue;
+    if(Math.hypot(e.x-x, e.z-z) <= radius){
+      if(e.state === 'patrol'){ e.state = 'investigate'; e.searchT = 9; }
+      e.lastKnown = { x, z };
+      e.path = null;
+    }
+  }
+}
+/* One trigger pull's worth of rounds leaves the muzzle here. */
+function fireOnce(sh, dir, originY){
+  const w = sh.gun, ammo = ITEMS[w.ammo];
+  if(sh.magLoaded <= 0) return false;
+  sh.magLoaded--;
+
+  const eye = originY !== undefined ? originY : sh.y + EYE[sh.stance];
+  const ox = sh.x + dir[0]*0.35, oy = eye - 0.06 + dir[1]*0.35, oz = sh.z + dir[2]*0.35;
+  const pellets = ammo.pel || 1;
+  const spread = sh.side === 'player' ? currentSpread(sh) : sh.aimError;
+  for(let i=0;i<pellets;i++) spawnBullet(sh, ox, oy, oz, dir, ammo, spread + (pellets>1 ? 1.1 : 0));
+
+  // recoil, bloom and noise
+  sh.bloom = Math.min((sh.bloom||0) + w.baseSpread*0.9 + w.kickV*0.10, 1.4);
+  if(sh.side === 'player'){
+    sh.recoilP += w.kickV * (sh.ads ? 0.72 : 1) * (sh.stance==='prone'?0.55:sh.stance==='crouch'?0.82:1);
+    sh.recoilY += (raid.R.next()-0.5) * 2 * w.kickH * (sh.ads ? 0.7 : 1);
+    sh.recoilZ = Math.min(sh.recoilZ + 0.045, 0.13);
+  }
+  raid.flash.x = ox; raid.flash.y = oy; raid.flash.z = oz;
+  raid.flash.i = w.suppressed ? 0.10 : 0.85;
+  makeNoise(sh.x, sh.z, w.noise, sh);
+  return true;
+}
+
+/* Advance every round in flight. This is where hits actually happen. */
+function stepBullets(dt){
+  const world = raid.world;
+  for(let i = raid.bullets.length-1; i >= 0; i--){
+    const b = raid.bullets[i];
+    b.life -= dt;
+    if(b.life <= 0){ raid.bullets.splice(i,1); continue; }
+
+    b.vy -= GRAVITY * dt;                       // real drop, from real velocity
+    const nx = b.x + b.vx*dt, ny = b.y + b.vy*dt, nz = b.z + b.vz*dt;
+    let dx = nx-b.x, dy = ny-b.y, dz = nz-b.z;
+    const seg = Math.hypot(dx,dy,dz);
+    if(seg < 1e-6){ raid.bullets.splice(i,1); continue; }
+    const ux = dx/seg, uy = dy/seg, uz = dz/seg;
+
+    // nearest body along this step
+    let hitEnt = null, hitLimb = null, hitT = 2;
+    for(const e of raid.ents){
+      if(!e.alive || e === b.owner) continue;
+      if(b.owner.side === 'ai' && e.side === 'ai') continue;   // no friendly fire between scavs
+      if(Math.hypot(e.x-b.x, e.z-b.z) > seg + 2) continue;
+      const r = segLimb(e, b.x,b.y,b.z, dx,dy,dz);
+      if(r && r.t < hitT){ hitT = r.t; hitEnt = e; hitLimb = r.limb; }
+    }
+    const wallT = traceWorld(world, b.x,b.y,b.z, ux,uy,uz, seg);
+
+    if(hitEnt && (wallT < 0 || hitT*seg < wallT)){
+      b.dist += hitT*seg;
+      const rep = resolveImpact(raid.R, ITEMS[b.ammo], hitEnt, hitLimb, b.dist,
+                                hitEnt.side==='player' ? rlog : null);
+      onHit(b.owner, hitEnt, hitLimb, rep, b.dist);
+      burst(b.x+ux*hitT*seg, b.y+uy*hitT*seg, b.z+uz*hitT*seg, rep.blocked ? [0.8,0.8,0.9] : [0.55,0.10,0.08], 5);
+      raid.bullets.splice(i,1);
+      continue;
+    }
+    if(wallT >= 0){
+      burst(b.x+ux*wallT, b.y+uy*wallT, b.z+uz*wallT, [0.55,0.52,0.45], 4);
+      raid.bullets.splice(i,1);
+      continue;
+    }
+    b.x = nx; b.y = ny; b.z = nz;
+    b.dist += seg;
+    if(b.dist > 380){ raid.bullets.splice(i,1); }
+  }
+}
+function burst(x,y,z, col, n){
+  const R = raid.R;
+  for(let i=0;i<n;i++)
+    raid.parts.push({ x, y, z, vx:R.range(-2.4,2.4), vy:R.range(0.4,3.4), vz:R.range(-2.4,2.4),
+                      s:R.range(0.03,0.075), c:col, life:R.range(0.25,0.55), e:0.2 });
+}
+function stepParticles(dt){
+  for(let i = raid.parts.length-1; i>=0; i--){
+    const p = raid.parts[i];
+    p.life -= dt;
+    if(p.life <= 0){ raid.parts.splice(i,1); continue; }
+    p.vy -= GRAVITY*dt*0.7;
+    p.x += p.vx*dt; p.y += p.vy*dt; p.z += p.vz*dt;
+    if(p.y < 0.02){ p.y = 0.02; p.vy *= -0.25; p.vx *= 0.6; p.vz *= 0.6; }
+  }
+}
+
+function onHit(shooter, target, limb, rep, metres){
+  if(target.side === 'player'){
+    raid.hurtT = 0.6;
+    raid.hurtDir = Math.atan2(shooter.x - target.x, shooter.z - target.z);
+    rlog(shooter.name+' hit you — '+LIMB_NAME[limb]+' — '+rep.dmg+(rep.blocked?' (armour stopped it)':''), 'dmg');
+    if(rep.armorBroke) rlog('Your armour has failed.', 'warn');
+  } else {
+    if(shooter.side === 'player'){
+      raid.hitMark = rep.blocked ? 0.12 : 0.2;
+      raid.lastHit = { limb, dmg:rep.dmg, blocked:rep.blocked, m:Math.round(metres) };
+    }
+    // being shot at is how a hostile finds out you exist
+    if(target.state === 'patrol' || target.state === 'investigate'){
+      target.state = 'engage';
+      target.lastKnown = { x:shooter.x, z:shooter.z };
+      target.reactT = target.tmpl.react * 0.5;
+    }
+  }
+  if(rep.killed) killEntity(target, shooter);
+}
+function killEntity(e, by){
+  e.alive = false;
+  if(e.side === 'player') return;
+  rlog(e.name+' down'+(by && by.side==='player' ? '' : ''), 'good');
+  raid.kills.push({ type:e.type, name:e.name,
+                    armored: e.armor ? ITEMS[e.armor.id].cls : 0,
+                    suppressed: by && by.gun ? by.gun.suppressed : false });
+  const R = raid.R, drop = [];
+  for(let i=0;i<(e.dropLoot||0);i++)
+    drop.push({ id:R.weighted(LOOT.map(l => [l.id, Math.max(0.3, 7-l.rar)])), n:1 });
+  if(e.gunObj && R.chance(0.55)) drop.push({ id:e.gunObj.plat, n:1, gun:e.gunObj });
+  if(e.armor && e.armor.dur > 4 && R.chance(0.5)) drop.push({ id:e.armor.id, n:1, dur:Math.round(e.armor.dur) });
+  if(e.helmet && e.helmet.dur > 4 && R.chance(0.5)) drop.push({ id:e.helmet.id, n:1, dur:Math.round(e.helmet.dur) });
+  if(e.gun) drop.push({ id:e.gun.ammo, n:R.int(10,35) });
+  raid.world.containers.push({ x:e.x, z:e.z, opened:false, items:drop, body:true });
+  buildWorldMesh(raid.world);
+}
+
+/* ------------------------------------------------------------------ *
+ *  AI                                                                 *
+ * ------------------------------------------------------------------ */
+function updateAI(e, dt){
+  const p = raid.player;
+  const world = raid.world;
+  if(!p.alive) return;
+
+  const eye = e.y + EYE[e.stance] - 0.1;
+  const tx = p.x, ty = p.y + EYE[p.stance] - 0.25, tz = p.z;
+  const d = Math.hypot(tx-e.x, tz-e.z);
+
+  // stance and posture make you harder to see
+  const stealth = p.stance === 'prone' ? 0.45 : p.stance === 'crouch' ? 0.72 : 1;
+  const canSee = d <= e.tmpl.sight * stealth && hasLOS(world, e.x, eye, e.z, tx, ty, tz);
+
+  if(canSee){
+    if(e.state !== 'engage'){
+      e.state = 'engage';
+      e.reactT = e.tmpl.react;      // reaction time — your window to break contact
+    }
+    e.lastKnown = { x:p.x, z:p.z };
+    e.searchT = 8;
+  } else if(e.state === 'engage'){
+    e.state = 'investigate';
+    e.searchT = 8;
+  }
+  if(e.state === 'investigate'){
+    e.searchT -= dt;
+    if(e.searchT <= 0){ e.state = 'patrol'; e.lastKnown = null; e.path = null; }
+  }
+
+  const hpFrac = totalHP(e)/totalMaxHP(e);
+  if(hpFrac < e.tmpl.flee) e.state = 'flee';
+
+  if(e.reactT > 0) e.reactT -= dt;
+  if(e.coolT  > 0) e.coolT  -= dt;
+  if(e.fireCd > 0) e.fireCd -= dt;
+  if(e.reloadT > 0){
+    e.reloadT -= dt;
+    if(e.reloadT <= 0){ e.magLoaded = e.gun.mag; e.spareMags--; }
+  }
+  e.strafeT -= dt;
+  if(e.strafeT <= 0){ e.strafe = raid.R.chance(0.5) ? 1 : -1; e.strafeT = raid.R.range(0.7, 2.0); }
+
+  const speed = e.tmpl.speed * (e.stance==='crouch' ? 0.55 : 1);
+
+  if(e.state === 'engage' && canSee){
+    e.yaw = Math.atan2(tx - e.x, tz - e.z) + Math.PI;
+    // hold at a range the weapon can actually use
+    const want = clamp(e.gun.sight * 0.45, 8, 45);
+    let mvx = 0, mvz = 0;
+    if(d > want){ mvx = (tx-e.x)/d; mvz = (tz-e.z)/d; }
+    else if(d < want*0.45){ mvx = -(tx-e.x)/d; mvz = -(tz-e.z)/d; }
+    else { mvx = -(tz-e.z)/d * e.strafe; mvz = (tx-e.x)/d * e.strafe; }
+    moveWithCollision(world, e, mvx*speed*dt, mvz*speed*dt, 0.34, e.y);
+    e.y = groundHeight(world, e.x, e.z);
+
+    if(e.magLoaded <= 0){
+      if(e.spareMags > 0 && e.reloadT <= 0) e.reloadT = e.gun.reload;
+      return;
+    }
+    if(e.reactT > 0 || e.coolT > 0 || e.reloadT > 0) return;
+
+    if(e.burstLeft <= 0 && e.fireCd <= 0){
+      e.burstLeft = raid.R.int(e.tmpl.burst[0], e.tmpl.burst[1]);
+    }
+    if(e.burstLeft > 0 && e.fireCd <= 0){
+      const dist = Math.hypot(tx-e.x, ty-(e.y+EYE[e.stance]), tz-e.z);
+      // aim at the torso, with error, and lead the drop a little at range
+      const dirx = tx - e.x, diry = (ty + dist*dist*0.0016) - (e.y + EYE[e.stance] - 0.1), dirz = tz - e.z;
+      const L = Math.hypot(dirx,diry,dirz);
+      e.aimError = e.tmpl.err * (e.stance==='crouch' ? 0.8 : 1) * (d > 45 ? 1.5 : 1);
+      fireOnce(e, [dirx/L, diry/L, dirz/L]);
+      e.burstLeft--;
+      e.fireCd = 60/e.gun.rpm;
+      if(e.burstLeft <= 0) e.coolT = raid.R.range(e.tmpl.cool[0], e.tmpl.cool[1]);
+    }
+    return;
+  }
+
+  if(e.state === 'flee'){
+    const away = Math.atan2(e.x - p.x, e.z - p.z);
+    moveWithCollision(world, e, Math.sin(away)*speed*dt, Math.cos(away)*speed*dt, 0.34, e.y);
+    e.y = groundHeight(world, e.x, e.z);
+    e.yaw = away + Math.PI;
+    return;
+  }
+
+  // move toward the last place you were noticed, or wander
+  e.repathT -= dt;
+  if(!e.path || e.repathT <= 0){
+    e.repathT = 1.0;
+    let goal = e.lastKnown;
+    if(!goal){
+      const f = raid.R.pick(world.free);
+      goal = { x:(f[0]+0.5)*CELL, z:(f[1]+0.5)*CELL };
+    }
+    e.path = findPath(world, cellOf(e.x), cellOf(e.z), cellOf(goal.x), cellOf(goal.z));
+    e.pathI = 0;
+  }
+  if(e.path && e.pathI < e.path.length){
+    const [gx,gy] = e.path[e.pathI];
+    const wx = (gx+0.5)*CELL, wz = (gy+0.5)*CELL;
+    const dd = Math.hypot(wx-e.x, wz-e.z);
+    if(dd < 0.6) e.pathI++;
+    else {
+      moveWithCollision(world, e, (wx-e.x)/dd*speed*0.7*dt, (wz-e.z)/dd*speed*0.7*dt, 0.34, e.y);
+      e.y = groundHeight(world, e.x, e.z);
+      e.yaw = Math.atan2(wx-e.x, wz-e.z) + Math.PI;
+    }
+  } else e.path = null;
+}
+
+/* ------------------------------------------------------------------ *
+ *  Ending a raid                                                      *
+ * ------------------------------------------------------------------ */
+function endRaid(result){
+  if(raid.over) return;
+  raid.over = true;
+  raid.result = result;
+  const survived = result === 'extracted';
+  const p = raid.player;
+  let xp = 0;
+  const gained = [];
+
+  G.raids.run++;
+  G.raids.kills += raid.kills.length;
+  for(const k of raid.kills) xp += (ENEMY_TYPES[k.type] || {xp:100}).xp;
+
+  if(survived){
+    G.raids.survived++;
+    xp += 500 + raid.bag.length * 40;
+    for(const b of raid.bag){
+      if(b.gun) G.guns.push(Object.assign({}, b.gun, { uid:'g'+(Math.random()*1e9|0) }));
+      else stashAdd(G, b.id, b.n, b.dur);
+      gained.push(b);
+    }
+    const k = raid.startKit;
+    if(k.armor)  { const s = findStash(G,k.armor);  if(s && p.armor)  s.dur = Math.round(p.armor.dur); }
+    if(k.helmet) { const s = findStash(G,k.helmet); if(s && p.helmet) s.dur = Math.round(p.helmet.dur); }
+    if(k.ammoId && p.gun) stashAdd(G, k.ammoId, p.magLoaded + p.spareMags*p.gun.mag);
+    for(const m of p.meds) if(m.pool > 0 || ITEMS[m.id].pool === 0) stashAdd(G, m.id, 1);
+  } else {
+    const k = raid.startKit;
+    if(k.gunUid){ const i = G.guns.findIndex(g=>g.uid===k.gunUid); if(i>=0) G.guns.splice(i,1); }
+    if(k.armor)  stashRemoveUid(G, k.armor);
+    if(k.helmet) stashRemoveUid(G, k.helmet);
+    if(k.rig)    stashRemoveUid(G, k.rig);
+    xp = Math.round(xp * 0.5);
+  }
+  updateQuests(survived, gained);
+  G.xp += xp;
+  refreshLevel();
+  G.loadout = null;
+  save();
+  showAfterAction(survived, xp, gained);
+}
+function updateQuests(survived, gained){
+  for(const q of QUESTS){
+    const st = G.quests[q.id];
+    if(st.done || traderLoyalty(q.trader) < q.unlock) continue;
+    if(q.type === 'kill'){
+      for(const k of raid.kills){
+        if(q.filter.type && k.type !== q.filter.type) continue;
+        if(q.filter.suppressed && !k.suppressed) continue;
+        if(q.filter.armored && k.armored < q.filter.armored) continue;
+        st.prog++;
+      }
+    } else if(q.type === 'extract_map' && survived && raid.def.id === q.filter.map) st.prog++;
+    else if(q.type === 'extract_item' && survived)
+      st.prog += gained.filter(g => ITEMS[g.id] && ITEMS[g.id].kind === q.filter.kind).length;
+    if(q.type !== 'build' && st.prog >= q.target) st.prog = q.target;
+  }
+}
+function checkBuildQuests(){
+  for(const q of QUESTS){
+    if(q.type !== 'build') continue;
+    const st = G.quests[q.id];
+    if(st.done || st.prog >= q.target || traderLoyalty(q.trader) < q.unlock) continue;
+    for(const g of G.guns){
+      const s = resolveWeapon(g);
+      if(q.filter.ergo && s.ergo >= q.filter.ergo) st.prog = q.target;
+      if(q.filter.rv && s.rv <= q.filter.rv) st.prog = q.target;
+    }
+  }
+}
+function claimQuest(q){
+  const st = G.quests[q.id];
+  if(st.done || st.prog < q.target) return;
+  st.done = true;
+  G.rub += q.rub; G.xp += q.xp;
+  G.spend[q.trader] = (G.spend[q.trader]||0) + Math.round(q.rub*0.6);
+  refreshLevel(); save();
+}
+/* ==========================================================================
+   SECTION 6 — MENUS AND THE WORKBENCH
+   ========================================================================== */
+
+const $ = id => document.getElementById(id);
+const esc = s => String(s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const money = n => Math.round(n).toLocaleString('en-US');
+let screenName = 'stash';
+let ui = { stashSel:null, stashFilter:'all', benchGun:null, benchSlot:null, trader:'prapor' };
+
+function switchScreen(n){
+  if(raid && !raid.over && n !== 'raid') return;
+  screenName = n;
+  document.querySelectorAll('.screen').forEach(s => s.classList.toggle('on', s.id === 'scr-'+n));
+  document.querySelectorAll('#nav button').forEach(b => b.classList.toggle('on', b.dataset.scr === n));
+  render();
+}
+function render(){
+  refreshTop();
+  if(screenName === 'stash')  renderStash();
+  if(screenName === 'bench')  renderBench();
+  if(screenName === 'trader') renderTrader();
+  if(screenName === 'quests') renderQuests();
+  if(screenName === 'deploy') renderDeploy();
+}
+function refreshTop(){
+  const l = levelFromXp(G.xp);
+  $('stLv').textContent = l.level;
+  $('stXp').textContent = '(' + money(l.into) + '/' + money(l.need) + ')';
+  $('stRub').textContent = money(G.rub);
+  $('stRaids').textContent = G.raids.run ? (G.raids.survived + '/' + G.raids.run + ' survived') : '';
+  const inRaid = raid && !raid.over;
+  document.querySelectorAll('#nav button').forEach(b => b.disabled = inRaid);
+  $('wipeBtn').disabled = inRaid;
+}
+function modal(html){ $('modalBox').innerHTML = html; $('modal').classList.add('on'); }
+function closeModal(){ $('modal').classList.remove('on'); }
+$('modal').addEventListener('click', e => { if(e.target.id === 'modal') closeModal(); });
+
+/* ------------------------------------------------------------------ *
+ *  Item helpers                                                       *
+ * ------------------------------------------------------------------ */
+function itemTag(it){
+  const label = { platform:'GUN', mod:it.slot ? it.slot.toUpperCase() : 'MOD', ammo:'AMMO',
+                  armor:it.type==='helmet'?'HELM':'ARMOR', rig:'RIG', med:'MED', loot:'LOOT', key:'KEY' }[it.kind] || '';
+  return '<span class="tag '+(TAGCLS[it.kind]||'')+'">'+esc(label)+'</span>';
+}
+function itemSummary(it){
+  if(it.kind === 'ammo') return 'dmg ' + it.dmg + (it.pel>1 ? '×'+it.pel : '') + ' · pen ' + it.pen + ' · ' + CALIBERS[it.cal].short;
+  if(it.kind === 'armor') return 'class ' + it.cls + ' · ' + it.dur + ' dur · ' + it.zones.length + ' zones';
+  if(it.kind === 'rig') return (it.cls ? 'class '+it.cls+' · ' : '') + it.cap + ' pouches';
+  if(it.kind === 'med') return (it.pool ? it.pool + ' hp · ' : '') + (it.cures.length ? it.cures.join('/') : 'healing') + ' · ' + it.ap + ' AP';
+  if(it.kind === 'mod'){
+    const bits = [];
+    if(it.ergo) bits.push((it.ergo>0?'+':'') + it.ergo + ' ergo');
+    if(it.rv) bits.push((it.rv>0?'+':'') + it.rv + '% recoil');
+    if(it.moa) bits.push((it.moa>0?'+':'') + it.moa + ' MOA');
+    if(it.cap) bits.push(it.cap + ' rounds');
+    if(it.sight) bits.push(it.sight + 'm sight');
+    if(it.noise) bits.push((it.noise>0?'+':'') + it.noise + ' noise');
+    if(it.vel) bits.push((it.vel>0?'+':'') + it.vel + ' m/s');
+    return bits.slice(0,3).join(' · ') || 'no stat change';
+  }
+  if(it.kind === 'platform') return CALIBERS[it.cal].short + ' · ' + it.mag + ' rounds · ergo ' + it.ergo;
+  if(it.kind === 'key') return 'unlocks an exit';
+  return '';
+}
+function gunLine(g){
+  const s = resolveWeapon(g);
+  return esc(s.name) + ' <span class="meta">' + CALIBERS[s.cal].short + ' · ergo ' + s.ergo + ' · rec ' + s.rv + '</span>';
+}
+function gunValue(g){
+  let v = ITEMS[g.plat].price;
+  for(const m of installedParts(g)) if(ITEMS[g.plat].fixed[m.slot] !== m.id) v += m.price;
+  return v;
+}
+
+/* ------------------------------------------------------------------ *
+ *  STASH                                                              *
+ * ------------------------------------------------------------------ */
+const FILTERS = [['all','All'],['weapons','Weapons'],['mods','Mods'],['ammo','Ammo'],['gear','Gear'],['meds','Meds'],['loot','Loot'],['keys','Keys']];
+function renderStash(){
+  const worth = G.stash.reduce((a,e) => a + (ITEMS[e.id].price||0)*e.n, 0) + G.guns.reduce((a,g)=>a+gunValue(g),0);
+  $('stashSub').textContent = G.stash.length + ' entries · ' + G.guns.length + ' weapons · estimated value ₽' + money(worth);
+  $('stashFilters').innerHTML = FILTERS.map(([k,l]) =>
+    '<button class="pill' + (ui.stashFilter===k?' on':'') + '" data-f="' + k + '">' + l + '</button>').join('');
+
+  let rows = '';
+  if(ui.stashFilter === 'all' || ui.stashFilter === 'weapons'){
+    for(const g of G.guns){
+      rows += '<div class="row' + (ui.stashSel==='gun:'+g.uid?' sel':'') + '" data-sel="gun:' + g.uid + '">' +
+              '<span class="tag w">GUN</span><span class="nm">' + gunLine(g) + '</span>' +
+              '<span class="price">₽' + money(gunValue(g)) + '</span></div>';
+    }
+  }
+  const entries = G.stash.filter(e => ui.stashFilter === 'all' || CAT_OF[ITEMS[e.id].kind] === ui.stashFilter);
+  entries.sort((a,b) => (ITEMS[b.id].price||0)*b.n - (ITEMS[a.id].price||0)*a.n);
+  for(const e of entries){
+    const it = ITEMS[e.id];
+    rows += '<div class="row' + (ui.stashSel===e.uid?' sel':'') + '" data-sel="' + e.uid + '">' + itemTag(it) +
+            '<span class="nm">' + esc(it.name) + (e.n>1?' <span class="meta">×'+e.n+'</span>':'') +
+            (e.dur!==undefined && it.dur ? ' <span class="meta">'+Math.round(e.dur)+'/'+it.dur+'</span>':'') + '</span>' +
+            '<span class="price">₽' + money((it.price||0)*e.n) + '</span></div>';
+  }
+  $('stashList').innerHTML = rows || '<div class="empty">Nothing here.</div>';
+
+  // detail pane
+  let d = '<div class="empty">Select an item</div>';
+  if(ui.stashSel && ui.stashSel.startsWith('gun:')){
+    const g = G.guns.find(x => x.uid === ui.stashSel.slice(4));
+    if(g) d = gunDetailHTML(g) + '<div class="mactions"><button class="btn" id="toBench">Open in workbench</button></div>';
+  } else if(ui.stashSel){
+    const e = findStash(G, ui.stashSel);
+    if(e){
+      const it = ITEMS[e.id];
+      d = '<h3 style="color:var(--acc2)">' + esc(it.name) + '</h3><div class="sub" style="margin:0 0 8px">' + esc(itemSummary(it)) + '</div>' + itemStatsHTML(it, e);
+    }
+  }
+  $('stashDetail').innerHTML = d;
+
+  const l = levelFromXp(G.xp);
+  $('charPanel').innerHTML =
+    kv('Level', l.level) + kv('Experience', money(G.xp)) +
+    kv('Next level in', money(l.need - l.into)) +
+    kv('Raids', G.raids.run) + kv('Survived', G.raids.survived + (G.raids.run ? ' (' + Math.round(G.raids.survived/G.raids.run*100) + '%)' : '')) +
+    kv('Kills', G.raids.kills) +
+    '<div class="hr"></div>' +
+    kv('Carry limit', '16 kg before you slow down');
+}
+function kv(k,v){ return '<div class="kv"><span>' + k + '</span><b>' + v + '</b></div>'; }
+
+function itemStatsHTML(it, entry){
+  let h = '';
+  if(it.kind === 'ammo'){
+    h += kv('Damage', it.dmg + (it.pel>1 ? ' × ' + it.pel + ' pellets' : '')) + kv('Penetration', it.pen) +
+         kv('Armour damage', Math.round(it.aDmg*100) + '%') + kv('Fragmentation', Math.round(it.frag*100) + '%') +
+         kv('Muzzle velocity', it.vel + ' m/s') + (it.quiet ? kv('Subsonic','yes') : '');
+    h += '<div class="hr"></div><h3>Penetration chance at 50 m</h3>';
+    for(const cls of [2,3,4,5,6]){
+      const c = penChance(penAtRange(it.pen, it.vel, 50), cls, 1);
+      h += barLine('Class ' + cls, Math.round(c*100) + '%', c, c > 0.6 ? 'ok' : c > 0.25 ? 'mid' : 'bad');
+    }
+  } else if(it.kind === 'armor' || (it.kind === 'rig' && it.cls)){
+    h += kv('Class', it.cls) + kv('Durability', (entry && entry.dur !== undefined ? Math.round(entry.dur) : it.dur) + ' / ' + it.dur) +
+         kv('Covers', it.zones.map(z => LIMB_NAME[z]).join(', ')) +
+         kv('Blunt throughput', Math.round(it.blunt*100) + '%') +
+         kv('Ergonomics', it.ergo) + kv('Weight', it.w + ' kg');
+    if(entry && entry.dur !== undefined && entry.dur < it.dur)
+      h += '<div class="warnbox" style="margin-top:8px">Worn plates stop fewer rounds. This one is at ' + Math.round(entry.dur/it.dur*100) + '% effectiveness.</div>';
+  } else if(it.kind === 'mod'){
+    const rows = [['Ergonomics','ergo'],['Vertical recoil','rv','%'],['Horizontal recoil','rh','%'],['Accuracy','moa',' MOA'],
+                  ['Muzzle velocity','vel',' m/s'],['Noise','noise',' m'],['Weight','w',' kg'],['Sight range','sight',' m'],['Capacity','cap',' rds']];
+    for(const [label,k,suf] of rows) if(it[k]) h += kv(label, (it[k]>0?'+':'') + it[k] + (suf||''));
+    if(it.provides.length) h += kv('Provides', it.provides.join(', '));
+    if(it.requires) h += kv('Requires', it.requires);
+    h += kv('Fits', it.fits === '*' ? 'any platform with the slot' : it.fits.join(', '));
+  } else if(it.kind === 'med'){
+    h += (it.pool ? kv('Healing pool', it.pool + ' hp') : '') + kv('Treats', it.cures.length ? it.cures.join(', ') : 'damage only') + kv('Action points', it.ap);
+  } else if(it.kind === 'platform'){
+    h += gunDetailHTML(newGun(it.id));
+  }
+  h += '<div class="hr"></div>' + kv('Value', '₽' + money(it.price||0));
+  return h;
+}
+function barLine(k, v, frac, tone){
+  const col = tone === 'ok' ? 'var(--good)' : tone === 'mid' ? 'var(--warn)' : tone === 'bad' ? 'var(--bad)' : 'var(--acc)';
+  return '<div class="statline"><span class="k">' + k + '</span><span class="bar"><i style="width:' +
+         clamp(frac*100,0,100) + '%;background:' + col + '"></i></span><span class="v">' + v + '</span></div>';
+}
+
+/* ------------------------------------------------------------------ *
+ *  WORKBENCH                                                          *
+ * ------------------------------------------------------------------ */
+const SLOT_LABEL = { muzzle:'Muzzle', barrel:'Barrel', gasblock:'Gas block', handguard:'Handguard',
+                     dustcover:'Dust cover', pistolgrip:'Grip', stock:'Stock', mount:'Mount',
+                     optic:'Optic', mag:'Magazine', foregrip:'Foregrip', tactical:'Tactical' };
+
+function renderBench(){
+  if(!G.guns.length){
+    $('wbGuns').innerHTML = '<div class="empty">No weapons.<br>Buy one from a trader.</div>';
+    $('wbSlots').innerHTML = '<div class="empty">Nothing to work on.</div>';
+    $('wbStats').innerHTML = '';
+    return;
+  }
+  if(!ui.benchGun || !G.guns.find(g => g.uid === ui.benchGun)) ui.benchGun = G.guns[0].uid;
+  const g = G.guns.find(x => x.uid === ui.benchGun);
+
+  $('wbGuns').innerHTML = '<h3 style="padding:2px 4px">Weapons</h3>' + G.guns.map(x =>
+    '<div class="row' + (x.uid===ui.benchGun?' sel':'') + '" data-gun="' + x.uid + '">' +
+    '<span class="nm">' + esc(x.name) + '<br><span class="meta">' + CALIBERS[ITEMS[x.plat].cal].short + '</span></span></div>').join('');
+
+  const p = ITEMS[g.plat];
+  const provided = providedSet(g);
+  let sl = '<div class="gunhdr"><span class="gn">' + esc(g.name) + '</span><span class="gc">' + esc(p.name) + ' · ' + CALIBERS[p.cal].name + '</span>' +
+           '<button class="btn sm" id="renameGun" style="margin-left:auto">Rename</button></div>';
+  sl += '<div style="margin-bottom:8px"><span class="meta" style="color:var(--dim2)">Available: </span>' +
+        ['rail','lower','thread'].map(k => '<span class="pill' + (provided.has(k)?' on':'') + '">' + k + '</span>').join('') + '</div>';
+
+  for(const slot of p.slots){
+    const cur = g.mods[slot] ? ITEMS[g.mods[slot]] : null;
+    const options = modsForSlot(g, slot);
+    const usable = options.filter(o => o.ok).length;
+    sl += '<div class="slot' + (usable||cur ? '' : ' locked') + '" data-slot="' + slot + '">' +
+          '<span class="sn">' + SLOT_LABEL[slot] + '</span>' +
+          '<span class="sv' + (cur?'':' none') + '">' + (cur ? esc(cur.name) : 'empty') + '</span>' +
+          '<span class="meta">' + (usable ? usable + ' avail' : (cur ? '' : 'none')) + '</span></div>';
+  }
+  // ammunition is part of the build
+  const owned = AMMO.filter(a => a.cal === p.cal && stashCount(G, a.id) > 0);
+  sl += '<div class="hr"></div><h3>Loaded ammunition</h3>';
+  if(!owned.length) sl += '<div class="reqnote">No ' + CALIBERS[p.cal].short + ' in the stash. Buy some from a trader.</div>';
+  sl += '<select id="ammoSel">' + AMMO.filter(a => a.cal === p.cal).map(a =>
+        '<option value="' + a.id + '"' + (a.id===g.ammo?' selected':'') + (stashCount(G,a.id)?'':' disabled') + '>' +
+        esc(a.name) + ' — dmg ' + a.dmg + ', pen ' + a.pen + ' (' + stashCount(G,a.id) + ' rds)</option>').join('') + '</select>';
+  $('wbSlots').innerHTML = sl;
+  $('wbStats').innerHTML = gunDetailHTML(g, true);
+}
+
+/* Every mod that could go in this slot, flagged with whether it is legal
+   and whether the player actually owns one. */
+function modsForSlot(g, slot){
+  const p = ITEMS[g.plat];
+  const out = [];
+  for(const m of MODS){
+    if(m.slot !== slot) continue;
+    if(m.fits !== '*' && !m.fits.includes(p.family)) continue;
+    const isFactory = p.fixed && p.fixed[slot] === m.id;
+    const installed = g.mods[slot] === m.id;
+    const owned = stashCount(G, m.id) > 0 || isFactory || installed;
+    const chk = canInstall(g, m);
+    out.push({ mod:m, ok: chk.ok && owned, why: !chk.ok ? chk.why : (!owned ? 'Not in stash' : ''), owned, installed, isFactory });
+  }
+  return out;
+}
+function openSlotModal(g, slot){
+  const opts = modsForSlot(g, slot);
+  const cur = g.mods[slot] ? ITEMS[g.mods[slot]] : null;
+  const before = resolveWeapon(g);
+  let h = '<h2>' + SLOT_LABEL[slot] + '</h2><div class="sub">' + esc(g.name) + ' — currently ' + (cur ? esc(cur.name) : 'empty') + '</div>';
+
+  if(cur){
+    const orph = dependentsOf(g, slot);
+    h += '<div class="row" data-install="__none"><span class="nm" style="color:var(--dim)">Remove ' + esc(cur.name) + '</span>' +
+         (orph.length ? '<span class="meta" style="color:var(--warn)">also drops ' + orph.map(s=>SLOT_LABEL[s]).join(', ') + '</span>' : '') + '</div><div class="hr"></div>';
+  }
+  const sorted = opts.slice().sort((a,b) => (b.ok?1:0)-(a.ok?1:0) || a.mod.price-b.mod.price);
+  for(const o of sorted){
+    const m = o.mod;
+    // preview the build with this part fitted
+    let deltaTxt = '';
+    if(o.ok){
+      const test = { plat:g.plat, mods:Object.assign({}, g.mods, { [slot]:m.id }), ammo:g.ammo, uid:g.uid, name:g.name };
+      const after = resolveWeapon(test);
+      const bits = [];
+      const d = (label, a, b, invert) => {
+        if(a === b) return;
+        const up = invert ? b < a : b > a;
+        bits.push('<span class="delta ' + (up?'up':'down') + '">' + label + ' ' + (b>a?'+':'') + (+(b-a).toFixed(2)) + '</span>');
+      };
+      d('ergo', before.ergo, after.ergo);
+      d('recoil', before.rv, after.rv, true);
+      d('MOA', before.moa, after.moa, true);
+      d('range', before.sight, after.sight);
+      d('kg', before.weight, after.weight, true);
+      deltaTxt = bits.join(' ');
+    }
+    h += '<div class="row' + (o.ok ? '' : ' locked') + '"' + (o.ok ? ' data-install="' + m.id + '"' : '') +
+         ' style="' + (o.ok?'':'opacity:.42;cursor:not-allowed') + '">' +
+         '<span class="nm">' + esc(m.name) + (o.installed ? ' <span class="meta">— fitted</span>' : '') +
+         '<br><span class="meta">' + (deltaTxt || esc(o.why || itemSummary(m))) + '</span></span>' +
+         '<span class="price">' + (o.isFactory ? 'stock' : (o.owned ? 'owned' : '₽' + money(m.price))) + '</span></div>';
+  }
+  h += '<div class="mactions"><button class="btn" onclick="closeModal()">Close</button></div>';
+  modal(h);
+}
+function installMod(g, slot, modId){
+  const p = ITEMS[g.plat];
+  const prev = g.mods[slot];
+  const returnPrev = () => {
+    if(prev && !(p.fixed && p.fixed[slot] === prev)) stashAdd(G, prev, 1);
+  };
+  if(modId === '__none'){
+    for(const s of dependentsOf(g, slot)){
+      if(!(p.fixed && p.fixed[s] === g.mods[s])) stashAdd(G, g.mods[s], 1);
+      delete g.mods[s];
+    }
+    returnPrev();
+    delete g.mods[slot];
+  } else {
+    const m = ITEMS[modId];
+    const isFactory = p.fixed && p.fixed[slot] === modId;
+    if(!isFactory && stashCount(G, modId) <= 0) return;
+    returnPrev();
+    if(!isFactory) stashRemove(G, modId, 1);
+    g.mods[slot] = modId;
+    // a swap can invalidate something that depended on the old part
+    for(const s in g.mods){
+      const mm = ITEMS[g.mods[s]];
+      if(s !== slot && mm && mm.requires && !providedSet(g).has(mm.requires)){
+        if(!(p.fixed && p.fixed[s] === g.mods[s])) stashAdd(G, g.mods[s], 1);
+        delete g.mods[s];
+      }
+    }
+  }
+  checkBuildQuests();
+  save();
+  closeModal();
+  render();
+}
+
+/* The stat readout — the payoff for the whole modding system. */
+function gunDetailHTML(g, full){
+  const s = resolveWeapon(g);
+  const p = ITEMS[g.plat];
+  const eff = effectiveRange(s);
+  const ammo = ITEMS[s.ammo];
+  let h = '<h3>' + esc(s.name) + '</h3>';
+  h += barLine('Ergonomics', s.ergo, s.ergo/110);
+  h += barLine('Vert. recoil', s.rv, 1 - clamp(s.rv/260,0,1), s.rv < 100 ? 'ok' : s.rv < 160 ? 'mid' : 'bad');
+  h += barLine('Horiz. recoil', s.rh, 1 - clamp(s.rh/600,0,1), s.rh < 260 ? 'ok' : s.rh < 420 ? 'mid' : 'bad');
+  h += barLine('Dispersion', s.moa + ' MOA', 1 - clamp(s.moa/6,0,1), s.moa < 2 ? 'ok' : s.moa < 3.5 ? 'mid' : 'bad');
+  h += barLine('Sight range', s.sight + ' m', s.sight/280);
+  h += barLine('Effective', eff + ' m', eff/300, eff > 150 ? 'ok' : eff > 70 ? 'mid' : 'bad');
+  h += barLine('Weight', s.weight + ' kg', 1 - clamp(s.weight/8,0,1), s.weight < 3.5 ? 'ok' : s.weight < 5 ? 'mid' : 'bad');
+  h += barLine('Noise', s.noise + ' m', 1 - clamp(s.noise/95,0,1), s.suppressed ? 'ok' : 'mid');
+  h += '<div class="hr"></div>';
+  h += kv('Calibre', CALIBERS[s.cal].name) + kv('Magazine', s.mag + ' rounds') +
+       kv('Fire modes', s.modes.map(m => FIRE_MODES[m].label).join(', ')) +
+       kv('Cyclic rate', s.rpm + ' rpm') +
+       kv('Time to aim', s.adsTime + ' s') +
+       kv('Reload', s.reload + ' s') +
+       kv('Recoil per shot', s.kickV + '° up, ±' + s.kickH + '° lateral') +
+       kv('Settles at', s.recover + '°/s') +
+       kv('Muzzle velocity', s.vel + ' m/s') +
+       kv('Drop at 100 m', dropAt(s, 100) + ' cm') +
+       (s.zoom > 1 ? kv('Magnification', s.zoom + '×') : '') +
+       (s.suppressed ? kv('Suppressed', 'yes') : '');
+
+  if(full){
+    h += '<div class="hr"></div><h3>' + esc(ammo.name) + ' vs armour</h3>';
+    h += '<div class="kv" style="color:var(--dim2)"><span>class</span><b>25 m / 75 m / 150 m</b></div>';
+    for(const cls of [2,3,4,5,6]){
+      const at = m => Math.round(penChance(penAtRange(ammo.pen, ammo.vel, m), cls, 1) * 100) + '%';
+      h += kv('Class ' + cls, at(25) + ' / ' + at(75) + ' / ' + at(150));
+    }
+    h += '<div class="hr"></div>' + kv('Build value', '₽' + money(gunValue(g)));
+    const missing = p.slots.filter(sl => !g.mods[sl] && (sl === 'mag'));
+    if(missing.length) h += '<div class="warnbox" style="margin-top:8px">No magazine fitted — this weapon cannot be taken into a raid.</div>';
+  }
+  return h;
+}
+
+/* ------------------------------------------------------------------ *
+ *  TRADERS                                                            *
+ * ------------------------------------------------------------------ */
+function renderTrader(){
+  $('traderTabs').innerHTML = TRADERS.map(t =>
+    '<button class="pill' + (ui.trader===t.id?' on':'') + '" data-tr="' + t.id + '" style="padding:5px 12px">' +
+    t.name + ' <span style="color:var(--dim2)">L' + traderLoyalty(t.id) + '</span></button>').join('');
+
+  const t = TRADERS.find(x => x.id === ui.trader);
+  const loy = traderLoyalty(t.id);
+  let buy = '<div class="sub" style="padding:6px 8px 10px">' + esc(t.blurb) + '<br><span style="color:var(--dim2)">Loyalty ' + loy +
+            ' · spent ₽' + money(G.spend[t.id]||0) + (loy < 4 ? ' · next level at ₽' + money([0,0,120000,450000,1100000][loy+1]) + ' and level ' + [0,1,6,12,20][loy+1] : '') + '</span></div>';
+
+  for(const [id, lv] of t.stock){
+    const it = ITEMS[id];
+    if(!it) continue;
+    const locked = lv > loy;
+    const price = Math.round(it.price * 1.0);
+    buy += '<div class="row' + (locked?' locked':'') + '"' + (locked?'':' data-buy="' + id + '"') +
+           ' style="' + (locked?'opacity:.38;cursor:not-allowed':'') + '">' + itemTag(it) +
+           '<span class="nm">' + esc(it.name) + '<br><span class="meta">' + esc(itemSummary(it)) + '</span></span>' +
+           '<span class="price">' + (locked ? 'LL' + lv : '₽' + money(price)) + '</span></div>';
+  }
+  $('traderBuy').innerHTML = buy;
+
+  let sell = '';
+  const sellable = G.stash.filter(e => t.buys.includes(ITEMS[e.id].kind));
+  sellable.sort((a,b) => (ITEMS[b.id].price||0)*b.n - (ITEMS[a.id].price||0)*a.n);
+  for(const e of sellable){
+    const it = ITEMS[e.id];
+    const each = Math.round((it.price||0) * t.rate * (e.dur !== undefined && it.dur ? clamp(e.dur/it.dur, 0.25, 1) : 1));
+    sell += '<div class="row" data-sell="' + e.uid + '">' + itemTag(it) +
+            '<span class="nm">' + esc(it.name) + (e.n>1?' <span class="meta">×'+e.n+'</span>':'') + '</span>' +
+            '<span class="price">₽' + money(each) + (e.n>1?' ea':'') + '</span></div>';
+  }
+  if(t.buys.includes('platform')){
+    for(const g of G.guns){
+      sell += '<div class="row" data-sellgun="' + g.uid + '"><span class="tag w">GUN</span>' +
+              '<span class="nm">' + esc(g.name) + '</span><span class="price">₽' + money(Math.round(gunValue(g)*t.rate)) + '</span></div>';
+    }
+  }
+  $('traderSell').innerHTML = sell || '<div class="empty">' + t.name + ' does not buy anything you have.</div>';
+}
+function doBuy(id){
+  const it = ITEMS[id];
+  const t = TRADERS.find(x => x.id === ui.trader);
+  const isAmmo = it.kind === 'ammo';
+  const qty = isAmmo ? 30 : 1;
+  const cost = it.price * qty;
+  if(G.rub < cost){ toast('Not enough roubles.'); return; }
+  G.rub -= cost;
+  G.spend[t.id] = (G.spend[t.id] || 0) + cost;
+  if(it.kind === 'platform') G.guns.push(newGun(id));
+  else stashAdd(G, id, qty);
+  save(); render();
+}
+function doSell(uid){
+  const e = findStash(G, uid);
+  if(!e) return;
+  const it = ITEMS[e.id];
+  const t = TRADERS.find(x => x.id === ui.trader);
+  const each = Math.round((it.price||0) * t.rate * (e.dur !== undefined && it.dur ? clamp(e.dur/it.dur, 0.25, 1) : 1));
+  G.rub += each; e.n--;
+  if(e.n <= 0) stashRemoveUid(G, uid);
+  save(); render();
+}
+function doSellGun(guid){
+  const i = G.guns.findIndex(g => g.uid === guid);
+  if(i < 0) return;
+  const t = TRADERS.find(x => x.id === ui.trader);
+  G.rub += Math.round(gunValue(G.guns[i]) * t.rate);
+  G.guns.splice(i,1);
+  save(); render();
+}
+function toast(msg){
+  rlogUI(msg);
+}
+let toastTimer = null;
+function rlogUI(msg){
+  let t = document.getElementById('toast');
+  if(!t){
+    t = document.createElement('div');
+    t.id = 'toast';
+    t.style.cssText = 'position:fixed;bottom:18px;left:50%;transform:translateX(-50%);background:var(--panel2);border:1px solid var(--warn);color:var(--warn);padding:8px 16px;z-index:99;font-size:12px';
+    document.body.appendChild(t);
+  }
+  t.textContent = msg;
+  t.style.display = 'block';
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => { t.style.display = 'none'; }, 2200);
+}
+
+/* ------------------------------------------------------------------ *
+ *  TASKS                                                              *
+ * ------------------------------------------------------------------ */
+function renderQuests(){
+  checkBuildQuests();
+  $('questList').innerHTML = QUESTS.map(q => {
+    const st = G.quests[q.id];
+    const loy = traderLoyalty(q.trader);
+    const locked = loy < q.unlock;
+    const ready = !st.done && st.prog >= q.target;
+    const tr = TRADERS.find(t => t.id === q.trader);
+    return '<div class="panel" style="' + (locked?'opacity:.45':'') + '">' +
+      '<div style="display:flex;align-items:baseline;gap:8px"><h3 style="margin:0;color:' + (st.done?'var(--good)':'var(--acc2)') + '">' + esc(q.name) + '</h3>' +
+      '<span class="meta" style="color:var(--dim2);margin-left:auto">' + tr.name + '</span></div>' +
+      '<div style="color:var(--dim);margin:5px 0 9px;font-size:11px">' + esc(q.desc) + '</div>' +
+      (locked ? '<div class="reqnote">Requires ' + tr.name + ' loyalty ' + q.unlock + '</div>'
+              : barLine('Progress', Math.min(st.prog,q.target) + '/' + q.target, Math.min(st.prog/q.target,1), st.done?'ok':'')) +
+      '<div class="kv" style="margin-top:6px"><span>Reward</span><b>₽' + money(q.rub) + ' · ' + money(q.xp) + ' xp</b></div>' +
+      (st.done ? '<div class="okbox" style="margin:8px 0 0">Completed</div>'
+               : ready ? '<div class="mactions" style="margin-top:10px"><button class="btn pri" data-claim="' + q.id + '">Turn in</button></div>' : '') +
+      '</div>';
+  }).join('');
+}
+
+/* ------------------------------------------------------------------ *
+ *  DEPLOY                                                             *
+ * ------------------------------------------------------------------ */
+function ensureLoadout(){
+  if(!G.loadout) G.loadout = { gun:null, mags:2, armor:null, helmet:null, rig:null, meds:[], map:'factory' };
+  const lo = G.loadout;
+  if(lo.gun && !G.guns.find(g => g.uid === lo.gun)) lo.gun = null;
+  if(!lo.gun && G.guns.length) lo.gun = G.guns[0].uid;
+  for(const s of ['armor','helmet','rig']) if(lo[s] && !findStash(G, lo[s])) lo[s] = null;
+  lo.meds = (lo.meds||[]).filter(id => stashCount(G, id) > 0);
+  return lo;
+}
+function renderDeploy(){
+  const lo = ensureLoadout();
+  const gun = G.guns.find(g => g.uid === lo.gun) || null;
+  const gs = gun ? resolveWeapon(gun) : null;
+
+  let h = '';
+  h += '<div class="kv" style="margin-bottom:6px"><span>Weapon</span><b>' + (gun ? esc(gun.name) : 'none') + '</b></div>';
+  h += '<select id="loGun"><option value="">— unarmed —</option>' + G.guns.map(g =>
+       '<option value="' + g.uid + '"' + (g.uid===lo.gun?' selected':'') + '>' + esc(g.name) + ' (' + CALIBERS[ITEMS[g.plat].cal].short + ')</option>').join('') + '</select>';
+
+  if(gs){
+    const have = stashCount(G, gs.ammo);
+    const maxMags = Math.max(0, Math.floor(have / gs.mag) - 1);
+    h += '<div class="hr"></div>';
+    h += '<div class="kv"><span>Ammunition</span><b>' + esc(gs.ammoName) + '</b></div>';
+    h += '<div class="kv"><span>In stash</span><b>' + have + ' rounds</b></div>';
+    if(have < gs.mag) h += '<div class="warnbox" style="margin-top:6px">Not enough ' + CALIBERS[gs.cal].short + ' to fill a magazine. Buy more, or change the loaded ammunition in the workbench.</div>';
+    h += '<div class="statline" style="margin-top:6px"><span class="k">Spare magazines</span>' +
+         '<span class="bar" style="flex:0 0 auto;border:none;background:none;height:auto">' +
+         '<button class="btn sm" data-mag="-1">−</button> <b style="padding:0 8px">' + lo.mags + '</b> <button class="btn sm" data-mag="1">+</button></span>' +
+         '<span class="v">' + ((lo.mags+1) * gs.mag) + ' rds</span></div>';
+    if(maxMags < lo.mags) h += '<div class="reqnote">Only enough rounds for ' + maxMags + ' spare magazines.</div>';
+  }
+
+  // armour
+  h += '<div class="hr"></div>';
+  for(const [slot, label, pred] of [['armor','Body armour', e => ITEMS[e.id].type==='armor'],
+                                    ['helmet','Helmet',     e => ITEMS[e.id].type==='helmet'],
+                                    ['rig','Chest rig',     e => ITEMS[e.id].type==='rig']]){
+    const opts = G.stash.filter(pred);
+    h += '<div class="kv" style="margin-top:4px"><span>' + label + '</span></div>';
+    h += '<select data-slot="' + slot + '"><option value="">— none —</option>' + opts.map(e => {
+      const it = ITEMS[e.id];
+      return '<option value="' + e.uid + '"' + (lo[slot]===e.uid?' selected':'') + '>' + esc(it.name) +
+             (it.cls ? ' — class ' + it.cls : '') + (it.dur ? ' (' + Math.round(e.dur) + '/' + it.dur + ')' : '') +
+             (it.cap ? ' — ' + it.cap + ' pouches' : '') + '</option>';
+    }).join('') + '</select>';
+  }
+
+  // medical
+  const cap = lo.rig ? ITEMS[findStash(G, lo.rig).id].cap : 2;
+  h += '<div class="hr"></div><div class="kv"><span>Medical (' + lo.meds.length + '/' + cap + ' pouches)</span></div>';
+  const medStack = {};
+  for(const e of G.stash) if(ITEMS[e.id].kind === 'med') medStack[e.id] = (medStack[e.id]||0) + e.n;
+  h += '<div style="margin-top:4px">' + Object.keys(medStack).map(id => {
+    const taken = lo.meds.filter(m => m === id).length;
+    return '<div class="row" style="cursor:default"><span class="tag med">MED</span><span class="nm">' + esc(ITEMS[id].name) +
+           ' <span class="meta">×' + medStack[id] + '</span></span>' +
+           '<button class="btn sm" data-med="-' + id + '">−</button><b style="padding:0 6px">' + taken + '</b>' +
+           '<button class="btn sm" data-med="+' + id + '">+</button></div>';
+  }).join('') || '<div class="empty">No medical supplies.</div>';
+  h += '</div>';
+  $('loadoutPanel').innerHTML = h;
+
+  // maps
+  $('mapPanel').innerHTML = MAPS.map(m => {
+    const locked = G.level < m.minLevel;
+    return '<div class="row' + (lo.map===m.id?' sel':'') + (locked?' locked':'') + '"' + (locked?'':' data-map="' + m.id + '"') +
+      ' style="' + (locked?'opacity:.4;cursor:not-allowed':'') + '">' +
+      '<span class="nm"><b style="color:var(--acc2)">' + m.name + '</b><br><span class="meta">' + esc(m.blurb) + '</span></span>' +
+      '<span class="meta">' + (locked ? 'level ' + m.minLevel : m.enemies[0] + '–' + m.enemies[1] + ' hostiles') + '</span></div>';
+  }).join('');
+
+  // readiness
+  const kit = { gun:gs, armor:lo.armor?findStash(G,lo.armor).id:null, helmet:lo.helmet?findStash(G,lo.helmet).id:null,
+                rig:lo.rig?findStash(G,lo.rig).id:null, spareMags:lo.mags, meds:lo.meds };
+  const wt = totalWeight(kit);
+  let ergoPen = 0;
+  for(const s of ['armor','helmet','rig']) if(kit[s]) ergoPen += ITEMS[kit[s]].ergo || 0;
+  const effErgo = gs ? clamp(gs.ergo + ergoPen, 5, 120) : 0;
+  const moveSpeed = 3.9 * clamp(1 - Math.max(0, wt-16)*0.020, 0.55, 1);
+
+  let risk = gs ? gunValue(gun) : 0;
+  for(const s of ['armor','helmet','rig']) if(kit[s]) risk += ITEMS[kit[s]].price;
+  for(const m of lo.meds) risk += ITEMS[m].price;
+  if(gs) risk += (lo.mags+1) * gs.mag * ITEMS[gs.ammo].price;
+
+  const problems = [];
+  if(!gs) problems.push('No weapon selected.');
+  else {
+    if(!gun.mods.mag && ITEMS[gun.plat].slots.includes('mag')) problems.push('No magazine fitted — visit the workbench.');
+    if(stashCount(G, gs.ammo) < gs.mag) problems.push('Not enough ammunition for one magazine.');
+  }
+  const mapDef = MAPS.find(m => m.id === lo.map);
+  if(G.level < mapDef.minLevel) problems.push('Level ' + mapDef.minLevel + ' required for ' + mapDef.name + '.');
+
+  let r = barLine('Effective ergo', effErgo, effErgo/110, effErgo > 55 ? 'ok' : effErgo > 35 ? 'mid' : 'bad');
+  r += barLine('Total weight', wt + ' kg', 1 - clamp(wt/30,0,1), wt < 16 ? 'ok' : wt < 23 ? 'mid' : 'bad');
+  r += barLine('Move speed', moveSpeed.toFixed(1) + ' m/s', moveSpeed/3.9, moveSpeed > 3.4 ? 'ok' : moveSpeed > 2.8 ? 'mid' : 'bad');
+  if(gs){
+    const adsT = clamp(0.62 - (effErgo-40)*0.0040, 0.15, 0.85);
+    r += barLine('Time to aim', adsT.toFixed(2) + ' s', 1 - adsT/0.85, adsT < 0.35 ? 'ok' : adsT < 0.5 ? 'mid' : 'bad');
+    r += barLine('Effective range', effectiveRange(gs) + ' m', effectiveRange(gs)/400);
+  }
+  r += '<div class="hr"></div>' + kv('Value at risk', '₽' + money(risk)) + kv('Destination', mapDef.name);
+  if(ergoPen) r += kv('Armour ergo penalty', ergoPen);
+  r += '<div class="hr"></div>';
+  r += problems.length ? '<div class="warnbox">' + problems.map(esc).join('<br>') + '</div>'
+                       : '<div class="okbox">Ready to deploy.</div>';
+  r += '<div class="mactions"><button class="btn pri" id="deployBtn"' + (problems.length?' disabled':'') + '>Deploy</button></div>';
+  $('readyPanel').innerHTML = r;
+}
+function doDeploy(){
+  const lo = ensureLoadout();
+  const gun = G.guns.find(g => g.uid === lo.gun);
+  if(!gun) return;
+  const gs = resolveWeapon(gun);
+  const have = stashCount(G, gs.ammo);
+  const wanted = (lo.mags + 1) * gs.mag;
+  const take = Math.min(have, wanted);
+  const mags = Math.max(0, Math.floor(take / gs.mag) - 1);
+  stashRemove(G, gs.ammo, take);
+  for(const m of lo.meds) stashRemove(G, m, 1);
+  const payload = Object.assign({}, lo, { gunObj:gun, mags });
+  save();
+  startRaid(lo.map, payload);
+  enterRaidView();
+}
+/* ------------------------------------------------------------------ *
+ *  Menu event wiring                                                  *
+ * ------------------------------------------------------------------ */
+/* Remember which slot the workbench modal is editing. */
+const _openSlotModal = openSlotModal;
+openSlotModal = function(g, slot){ ui.benchSlot = slot; _openSlotModal(g, slot); };
+
+function wireMenus(){
+  $('nav').addEventListener('click', e => {
+    const b = e.target.closest('button[data-scr]');
+    if(b && !b.disabled) switchScreen(b.dataset.scr);
+  });
+  $('wipeBtn').addEventListener('click', () => {
+    modal('<h2>Wipe progress</h2><div class="sub">This deletes your stash, weapons, roubles and task progress. It cannot be undone.</div>' +
+          '<div class="mactions"><button class="btn" onclick="closeModal()">Cancel</button>' +
+          '<button class="btn danger" id="wipeYes">Wipe everything</button></div>');
+  });
+
+  $('scr-stash').addEventListener('click', e => {
+    const f = e.target.closest('[data-f]');
+    if(f){ ui.stashFilter = f.dataset.f; render(); return; }
+    const r = e.target.closest('[data-sel]');
+    if(r){ ui.stashSel = r.dataset.sel; render(); return; }
+    if(e.target.id === 'toBench'){ ui.benchGun = ui.stashSel.slice(4); switchScreen('bench'); }
+  });
+
+  $('scr-bench').addEventListener('click', e => {
+    const g = e.target.closest('[data-gun]');
+    if(g){ ui.benchGun = g.dataset.gun; render(); return; }
+    const s = e.target.closest('[data-slot]');
+    if(s){
+      const gun = G.guns.find(x => x.uid === ui.benchGun);
+      if(gun) openSlotModal(gun, s.dataset.slot);
+      return;
+    }
+    if(e.target.id === 'renameGun'){
+      const gun = G.guns.find(x => x.uid === ui.benchGun);
+      modal('<h2>Rename</h2><input type="text" id="gunName" value="' + esc(gun.name) + '" style="width:100%;margin-top:8px">' +
+            '<div class="mactions"><button class="btn" onclick="closeModal()">Cancel</button><button class="btn pri" id="gunNameOk">Save</button></div>');
+      setTimeout(() => { const i = $('gunName'); if(i){ i.focus(); i.select(); } }, 30);
+    }
+  });
+  $('scr-bench').addEventListener('change', e => {
+    if(e.target.id === 'ammoSel'){
+      const gun = G.guns.find(x => x.uid === ui.benchGun);
+      gun.ammo = e.target.value;
+      save(); render();
+    }
+  });
+
+  $('modalBox').addEventListener('click', e => {
+    const inst = e.target.closest('[data-install]');
+    if(inst){
+      const gun = G.guns.find(x => x.uid === ui.benchGun);
+      if(gun) installMod(gun, ui.benchSlot, inst.dataset.install);
+      return;
+    }
+    if(e.target.id === 'wipeYes'){
+      localStorage.removeItem(SAVE_KEY);
+      G = newSave(); raid = null;
+      closeModal(); switchScreen('stash');
+      return;
+    }
+    if(e.target.id === 'gunNameOk'){
+      const gun = G.guns.find(x => x.uid === ui.benchGun);
+      const v = $('gunName').value.trim();
+      if(gun && v) gun.name = v.slice(0,32);
+      save(); closeModal(); render();
+      return;
+    }
+    if(e.target.id === 'aarClose'){
+      raid = null;
+      closeModal();
+      switchScreen('stash');
+      return;
+    }
+  });
+
+  $('scr-trader').addEventListener('click', e => {
+    const t = e.target.closest('[data-tr]');
+    if(t){ ui.trader = t.dataset.tr; render(); return; }
+    const b = e.target.closest('[data-buy]');   if(b){ doBuy(b.dataset.buy); return; }
+    const s = e.target.closest('[data-sell]');  if(s){ doSell(s.dataset.sell); return; }
+    const sg = e.target.closest('[data-sellgun]'); if(sg){ doSellGun(sg.dataset.sellgun); return; }
+  });
+
+  $('scr-quests').addEventListener('click', e => {
+    const c = e.target.closest('[data-claim]');
+    if(c){ claimQuest(QUESTS.find(q => q.id === c.dataset.claim)); render(); }
+  });
+
+  $('scr-deploy').addEventListener('click', e => {
+    const m = e.target.closest('[data-mag]');
+    if(m){
+      const lo = ensureLoadout();
+      const gun = G.guns.find(g => g.uid === lo.gun);
+      const gs = gun ? resolveWeapon(gun) : null;
+      const maxMags = gs ? Math.max(0, Math.floor(stashCount(G, gs.ammo)/gs.mag) - 1) : 0;
+      lo.mags = clamp(lo.mags + (+m.dataset.mag), 0, Math.min(9, maxMags));
+      save(); render(); return;
+    }
+    const md = e.target.closest('[data-med]');
+    if(md){
+      const lo = ensureLoadout();
+      const v = md.dataset.med, id = v.slice(1), sign = v[0];
+      const cap = lo.rig ? ITEMS[findStash(G, lo.rig).id].cap : 2;
+      if(sign === '+'){
+        const owned = G.stash.filter(x => x.id === id).reduce((a,x)=>a+x.n,0);
+        if(lo.meds.length < cap && lo.meds.filter(x=>x===id).length < owned) lo.meds.push(id);
+      } else {
+        const i = lo.meds.indexOf(id);
+        if(i >= 0) lo.meds.splice(i,1);
+      }
+      save(); render(); return;
+    }
+    const mp = e.target.closest('[data-map]');
+    if(mp){ ensureLoadout().map = mp.dataset.map; save(); render(); return; }
+    if(e.target.id === 'deployBtn'){
+      if(matchMedia('(pointer:coarse)').matches){ $('touchwarn').classList.add('on'); }
+      doDeploy();
+      return;
+    }
+  });
+  $('scr-deploy').addEventListener('change', e => {
+    const lo = ensureLoadout();
+    if(e.target.id === 'loGun'){ lo.gun = e.target.value || null; lo.mags = 3; }
+    else if(e.target.dataset.slot) lo[e.target.dataset.slot] = e.target.value || null;
+    save(); render();
+  });
+}
+/* ==========================================================================
+   SECTION 7 — PLAYER, INPUT, HUD, MAIN LOOP
+   ========================================================================== */
+
+const keys = Object.create(null);
+const mouse = { down:false, edge:false, right:false };
+let sensitivity = 0.0022;
+let locked = false, paused = false;
+
+/* Bullet drop in centimetres at a given range — shown in the workbench. */
+function dropAt(gun, metres){
+  const t = metres / gun.vel;
+  return Math.round(0.5 * GRAVITY * t * t * 100);
+}
+
+/* ------------------------------------------------------------------ *
+ *  Player                                                             *
+ * ------------------------------------------------------------------ */
+function updatePlayer(dt){
+  const p = raid.player, world = raid.world;
+  if(!p.alive) return;
+
+  /* --- stance --- */
+  const wantStance = keys.KeyZ ? 'prone' : (keys.ControlLeft || keys.KeyC) ? 'crouch' : 'stand';
+  if(wantStance !== p.stance && p.onGround) p.stance = wantStance;
+
+  /* --- movement --- */
+  let fx = 0, fz = 0;
+  if(keys.KeyW) fz += 1;
+  if(keys.KeyS) fz -= 1;
+  if(keys.KeyD) fx += 1;
+  if(keys.KeyA) fx -= 1;
+  const mag = Math.hypot(fx, fz);
+  let sp = speedOf(p);
+  const sprinting = keys.ShiftLeft && fz > 0 && !p.ads && p.stance === 'stand' && p.stamina > 0.02;
+  if(sprinting){ sp *= 1.55; p.stamina = Math.max(0, p.stamina - dt*0.20); }
+  else p.stamina = Math.min(1, p.stamina + dt*0.28);
+
+  if(mag > 0){
+    fx /= mag; fz /= mag;
+    const sy = Math.sin(p.yaw), cy = Math.cos(p.yaw);
+    // forward is -Z at yaw 0; right is +X
+    const mx = (-sy)*fz + cy*fx;
+    const mz = (-cy)*fz + (-sy)*fx;
+    const ml = Math.hypot(mx, mz) || 1;
+    moveWithCollision(world, p, (mx/ml)*sp*dt, (mz/ml)*sp*dt, 0.32, p.y);
+    p.speed = sp;
+    p.bobT += dt * sp * 1.6;
+    p.bobY = Math.sin(p.bobT) * 0.016 * (p.ads ? 0.25 : 1);
+  } else {
+    p.speed = 0;
+    p.bobY *= Math.max(0, 1 - dt*7);
+  }
+  p.swayX = Math.sin(raid.time*1.3) * 0.006 + Math.sin(raid.time*0.7) * 0.004;
+
+  /* --- gravity and crates --- */
+  const gh = groundHeight(world, p.x, p.z);
+  if(keys.Space && p.onGround && p.stance === 'stand'){ p.vy = 4.3; p.onGround = false; }
+  p.vy -= GRAVITY * dt;
+  p.y += p.vy * dt;
+  if(p.y <= gh){ p.y = gh; p.vy = 0; p.onGround = true; }
+
+  /* --- aiming --- */
+  p.ads = mouse.right && p.reloadT <= 0 && !sprinting;
+  const rate = dt / Math.max(0.05, p.gun ? p.gun.adsTime : 0.3);
+  p.adsT = clamp(p.adsT + (p.ads ? rate : -rate*1.4), 0, 1);
+
+  /* --- recoil: it goes onto your view, and settles back --- */
+  if(p.recoilP){ p.pitch += p.recoilP * DEG; p.recoilDebt = (p.recoilDebt||0) + p.recoilP * DEG; p.recoilP = 0; }
+  if(p.recoilY){ p.yaw   += p.recoilY * DEG; p.recoilDebtY = (p.recoilDebtY||0) + p.recoilY * DEG; p.recoilY = 0; }
+  const rec = (p.gun ? p.gun.recover : 4) * DEG * dt;
+  if(p.recoilDebt > 0){ const r = Math.min(p.recoilDebt, rec); p.pitch -= r; p.recoilDebt -= r; }
+  if(p.recoilDebtY){
+    const s = Math.sign(p.recoilDebtY), r = Math.min(Math.abs(p.recoilDebtY), rec);
+    p.yaw -= s*r; p.recoilDebtY -= s*r;
+  }
+  p.recoilZ *= Math.max(0, 1 - dt*9);
+  p.bloom = Math.max(0, p.bloom - dt * 1.9);
+
+  /* --- firing --- */
+  if(p.fireCd > 0) p.fireCd -= dt;
+  if(p.reloadT > 0){
+    p.reloadT -= dt;
+    if(p.reloadT <= 0 && p.spareMags > 0){ p.spareMags--; p.magLoaded = p.gun.mag; rlog('Reloaded.', 'good'); }
+  }
+  if(p.medT > 0){
+    p.medT -= dt;
+    if(p.medT <= 0) finishMed();
+  }
+  if(p.gun && p.reloadT <= 0 && p.medT <= 0 && !sprinting){
+    const fm = FIRE_MODES[raid.mode];
+    let want = false;
+    if(raid.mode === 'auto') want = mouse.down;
+    else if(mouse.edge){
+      want = true;
+      if(raid.mode === 'burst') p.burstLeft = 3;
+      mouse.edge = false;
+    }
+    if(p.burstLeft > 0) want = true;
+    if(want && p.fireCd <= 0){
+      if(p.magLoaded <= 0){
+        p.burstLeft = 0;
+        if(p.fireCd <= 0){ rlog('Empty — press R.', 'warn'); p.fireCd = 0.35; }
+      } else {
+        fireOnce(p, forwardOf(p.yaw, p.pitch), p.y + EYE[p.stance]);
+        p.fireCd = 60 / p.gun.rpm;
+        if(p.burstLeft > 0) p.burstLeft--;
+      }
+    }
+  }
+  mouse.edge = false;
+  p.pitch = clamp(p.pitch, -87*DEG, 87*DEG);
+
+  /* --- bleeding --- */
+  tickBleeds(p, dt);
+  if(p.effects.painkiller > 0) p.effects.painkiller -= dt;
+  if(!p.alive){ endRaid('killed'); return; }
+
+  /* --- what is in reach --- */
+  raid.nearContainer = null;
+  for(const c of raid.world.containers){
+    if(!c.opened && Math.hypot(c.x-p.x, c.z-p.z) < 2.2){ raid.nearContainer = c; break; }
+  }
+
+  /* --- extraction --- */
+  let inZone = null;
+  for(const e of raid.world.extracts)
+    if(Math.hypot(e.x-p.x, e.z-p.z) < e.r) { inZone = e; break; }
+  if(inZone && inZone.key && !hasKeyFor(inZone.key)) inZone = null;
+  raid.inExtract = inZone;
+  if(inZone){
+    raid.extractT += dt;
+    if(raid.extractT >= 6){ endRaid('extracted'); return; }
+  } else raid.extractT = 0;
+}
+function hasKeyFor(k){
+  const id = 'k_' + ({car:'dorm', gate:'gate', bunker:'bunker'})[k];
+  return raid.bag.some(b => b.id === id) || stashCount(G, id) > 0;
+}
+function doReload(){
+  const p = raid.player;
+  if(!p.gun || p.reloadT > 0 || p.medT > 0) return;
+  if(p.spareMags <= 0){ rlog('No spare magazines.', 'warn'); return; }
+  if(p.magLoaded >= p.gun.mag) return;
+  p.reloadT = p.gun.reload;
+  p.burstLeft = 0;
+}
+/* Pick the item that actually addresses what is wrong with you. */
+function useMed(){
+  const p = raid.player;
+  if(p.medT > 0 || !p.meds.length) return;
+  const need = { heavy:hasEffect(p,'heavy'), light:hasEffect(p,'light'), frac:hasEffect(p,'frac') };
+  let pick = -1;
+  const score = m => {
+    const it = ITEMS[m.id];
+    let s = 0;
+    if(need.heavy && it.cures.includes('heavy')) s += 100;
+    if(need.frac  && it.cures.includes('frac'))  s += 80;
+    if(need.light && it.cures.includes('light')) s += 40;
+    if(m.pool > 0 && totalHP(p) < totalMaxHP(p)) s += 20 + Math.min(m.pool/100, 10);
+    return s;
+  };
+  let bestS = 0;
+  p.meds.forEach((m,i) => { const s = score(m); if(s > bestS){ bestS = s; pick = i; } });
+  if(pick < 0){ rlog('Nothing that would help.', 'sys'); return; }
+  p.medIdx = pick;
+  p.medT = ITEMS[p.meds[pick].id].pool > 0 ? 3.0 : 2.2;
+  p.ads = false;
+}
+function finishMed(){
+  const p = raid.player;
+  const med = p.meds[p.medIdx];
+  if(!med) return;
+  const it = ITEMS[med.id];
+  if(it.cures.includes('pain')){ p.effects.painkiller = 30; }
+  for(const c of it.cures){
+    if(c === 'frac'){ p.effects.frac = {}; rlog('Fracture splinted.', 'good'); }
+    if(c === 'light' || c === 'heavy'){
+      const before = p.effects.bleeds.length;
+      p.effects.bleeds = p.effects.bleeds.filter(b => b.kind !== c);
+      if(p.effects.bleeds.length < before) rlog(c === 'heavy' ? 'Heavy bleeding stopped.' : 'Bandaged.', 'good');
+    }
+  }
+  if(med.pool > 0){
+    let healed = 0;
+    for(let pass=0; pass<7 && med.pool > 0; pass++){
+      const order = LIMBS.filter(l => p.body[l].hp < p.body[l].max)
+                         .sort((a,b)=>(p.body[a].hp/p.body[a].max)-(p.body[b].hp/p.body[b].max));
+      if(!order.length) break;
+      const l = order[0];
+      const want = Math.min(med.pool, p.body[l].max - p.body[l].hp, 45);
+      p.body[l].hp += want; med.pool -= want; healed += want;
+    }
+    if(healed) rlog('Healed '+Math.round(healed)+'.', 'good');
+  }
+  if(med.pool <= 0) p.meds.splice(p.medIdx, 1);
+  p.medIdx = -1;
+}
+function lootContainer(c){
+  if(!c || c.opened) return;
+  c.opened = true;
+  for(const it of c.items){
+    raid.bag.push(it);
+    rlog('Picked up '+(it.n>1 ? it.n+'x ' : '')+ITEMS[it.id].name, 'big');
+  }
+  if(!c.items.length) rlog('Empty.', 'sys');
+  makeNoise(raid.player.x, raid.player.z, 14, raid.player);
+  buildWorldMesh(raid.world);
+}
+
+/* ------------------------------------------------------------------ *
+ *  Simulation step                                                    *
+ * ------------------------------------------------------------------ */
+function stepSim(dt){
+  if(!raid || raid.over) return;
+  raid.time += dt;
+  updatePlayer(dt);
+  if(raid.over) return;
+  for(const e of raid.ents){
+    if(!e.alive || e.side === 'player') continue;
+    tickBleeds(e, dt);
+    if(!e.alive){ killEntity(e, null); continue; }
+    updateAI(e, dt);
+  }
+  stepBullets(dt);
+  stepParticles(dt);
+  if(!raid.player.alive){ endRaid('killed'); return; }
+  raid.flash.i = Math.max(0, raid.flash.i - dt*7);
+  raid.hitMark = Math.max(0, raid.hitMark - dt);
+  raid.hurtT   = Math.max(0, raid.hurtT - dt);
+  for(const e of raid.ents) if(e.side === 'ai')
+    e.seen = Math.hypot(e.x - raid.player.x, e.z - raid.player.z) < 240;
+}
+
+/* ------------------------------------------------------------------ *
+ *  Main loop                                                          *
+ * ------------------------------------------------------------------ */
+let lastT = 0, hudT = 0, fps = 0, fpsAcc = 0, fpsN = 0;
+function frame(now){
+  requestAnimationFrame(frame);
+  const dt = Math.min((now - lastT) / 1000 || 0, 0.05);
+  lastT = now;
+  if(!raid || raid.over || screenName !== 'raid') return;
+
+  fpsAcc += dt; fpsN++;
+  if(fpsAcc > 0.5){ fps = Math.round(fpsN/fpsAcc); fpsAcc = 0; fpsN = 0; }
+
+  if(!paused) stepSim(dt);
+  if(raid.over) return;
+
+  const p = raid.player;
+  const base = 75, zoomFov = 75 / (1.35 * (p.gun ? p.gun.zoom : 1));
+  const cam = { x:p.x, y:p.y + EYE[p.stance] + p.bobY, z:p.z,
+                yaw:p.yaw, pitch:p.pitch, fov:lerp(base, zoomFov, p.adsT) };
+  raid.cam = cam;
+  renderFrame(cam);
+
+  hudT += dt;
+  if(hudT > 0.06){ hudT = 0; drawHUD(cam); }
+}
+
+/* ------------------------------------------------------------------ *
+ *  HUD                                                                *
+ * ------------------------------------------------------------------ */
+function drawHUD(cam){
+  const p = raid.player;
+  const cv = $('view');
+
+  // crosshair opens and closes with the actual cone
+  const half = currentSpread(p);
+  const px = Math.tan(half*DEG) / Math.tan(cam.fov*DEG/2) * (cv.clientHeight/2);
+  const ch = $('cross');
+  ch.style.width = ch.style.height = Math.max(6, Math.min(px*2, 260)) + 'px';
+  ch.style.opacity = p.adsT > 0.75 && p.gun && p.gun.zoom > 1 ? 0 : 1;
+  $('scope').style.opacity = (p.gun && p.gun.zoom >= 4 && p.adsT > 0.8) ? 1 : 0;
+
+  $('hitmark').style.opacity = raid.hitMark > 0 ? 1 : 0;
+  $('hitmark').style.borderColor = raid.lastHit && raid.lastHit.blocked ? '#9fb0c4' : '#e8e2d2';
+
+  const hurt = $('hurt');
+  hurt.style.opacity = raid.hurtT > 0 ? Math.min(raid.hurtT/0.6, 1) * 0.75 : 0;
+
+  // ammunition
+  const fm = FIRE_MODES[raid.mode];
+  $('ammo').innerHTML = p.gun
+    ? '<b>' + p.magLoaded + '</b><span>/ ' + p.spareMags*p.gun.mag + '</span>' +
+      '<i>' + fm.label + ' · ' + esc(p.gun.ammoName) + '</i>'
+    : '<b>—</b>';
+
+  // limbs
+  let hp = '';
+  for(const l of ['head','thorax','stomach','larm','rarm','lleg','rleg']){
+    const b = p.body[l], f = b.hp/b.max;
+    const bleed = p.effects.bleeds.find(x => x.zone === l);
+    hp += '<div class="lm' + (b.hp<=0?' out':f<0.35?' crit':f<0.7?' hurt':'') + '">' +
+          '<em style="width:' + Math.round(f*100) + '%"></em>' +
+          '<b>' + LIMB_NAME[l] + (bleed ? (bleed.kind==='heavy'?' ✚✚':' ✚') : '') + '</b>' +
+          '<u>' + Math.max(0, Math.round(b.hp)) + '</u></div>';
+  }
+  $('limbs').innerHTML = hp;
+
+  // status line
+  const st = [];
+  if(p.reloadT > 0) st.push('RELOADING');
+  if(p.medT > 0) st.push('USING ' + ITEMS[p.meds[p.medIdx].id].name.toUpperCase());
+  if(hasEffect(p,'heavy')) st.push('HEAVY BLEED');
+  if(hasEffect(p,'frac')) st.push('FRACTURE');
+  if(p.stance !== 'stand') st.push(p.stance.toUpperCase());
+  if(p.stamina < 0.3) st.push('WINDED');
+  $('status').innerHTML = st.map(s => '<span>'+s+'</span>').join('');
+
+  // prompts and extraction
+  $('prompt').textContent = raid.nearContainer ? '[E]  Search container' : '';
+  const ex = $('exfil');
+  if(raid.inExtract){
+    ex.style.display = 'block';
+    ex.innerHTML = 'EXTRACTING — ' + (6 - raid.extractT).toFixed(1) + 's' +
+                   '<i style="width:' + Math.round(raid.extractT/6*100) + '%"></i>';
+  } else ex.style.display = 'none';
+
+  // carried value and clock
+  $('carry').textContent = raid.bag.length
+    ? raid.bag.length + ' items · ₽' + money(raid.bag.reduce((a,b)=>a+(ITEMS[b.id].price||0)*b.n,0)) : '';
+  $('clock').textContent = raid.def.name + '  ·  ' + Math.floor(raid.time/60) + ':' +
+                           String(Math.floor(raid.time%60)).padStart(2,'0') + '  ·  ' + fps + ' fps';
+
+  const lg = $('rlog');
+  lg.innerHTML = raid.log.slice(-7).map(l => '<div class="'+l.cls+'">'+esc(l.msg)+'</div>').join('');
+}
+
+/* ------------------------------------------------------------------ *
+ *  View switching                                                     *
+ * ------------------------------------------------------------------ */
+function enterRaidView(){
+  screenName = 'raid';
+  document.querySelectorAll('.screen').forEach(s => s.classList.toggle('on', s.id === 'scr-raid'));
+  document.querySelectorAll('#nav button').forEach(b => b.classList.remove('on'));
+  $('topbar').style.display = 'none';
+  resizeView();
+  paused = false;
+  $('pause').classList.remove('on');
+  refreshTop();
+  requestLock();
+}
+function leaveRaidView(){
+  $('topbar').style.display = '';
+  document.exitPointerLock && document.exitPointerLock();
+}
+function resizeView(){
+  const c = $('view');
+  const dpr = Math.min(window.devicePixelRatio || 1, 2);
+  c.width  = Math.max(1, Math.floor(c.clientWidth  * dpr));
+  c.height = Math.max(1, Math.floor(c.clientHeight * dpr));
+}
+function requestLock(){
+  const c = $('view');
+  if(c.requestPointerLock) c.requestPointerLock();
+}
+function setPaused(v){
+  paused = v;
+  $('pause').classList.toggle('on', v);
+  if(!v) requestLock();
+  else document.exitPointerLock && document.exitPointerLock();
+}
+
+/* ------------------------------------------------------------------ *
+ *  After-action                                                       *
+ * ------------------------------------------------------------------ */
+function showAfterAction(survived, xp, gained){
+  leaveRaidView();
+  const p = raid.player;
+  let h = '<h2 style="color:' + (survived ? 'var(--good)' : 'var(--bad)') + '">' +
+          (survived ? 'EXTRACTED' : 'KILLED IN ACTION') + '</h2>' +
+          '<div class="sub">' + raid.def.name + ' · ' + Math.floor(raid.time/60) + 'm ' +
+          Math.floor(raid.time%60) + 's · ' + raid.kills.length + ' eliminated</div>';
+  if(survived){
+    h += '<h3>Brought home</h3>';
+    if(gained.length){
+      let worth = 0;
+      for(const g of gained){
+        const it = ITEMS[g.id];
+        worth += (it.price||0)*g.n;
+        h += '<div class="mrow"><span>'+esc(it.name)+(g.n>1?' ×'+g.n:'')+'</span><span>₽'+money((it.price||0)*g.n)+'</span></div>';
+      }
+      h += '<div class="mrow" style="border-top:1px solid var(--line2)"><span><b>Total</b></span><span style="color:var(--gold)"><b>₽'+money(worth)+'</b></span></div>';
+    } else h += '<div class="empty">You came back empty-handed.</div>';
+  } else {
+    h += '<h3>Lost</h3>';
+    const lost = [];
+    if(p.gun) lost.push(p.gun.name);
+    for(const s of ['armor','helmet','rig']) if(p[s]) lost.push(ITEMS[p[s].id].name);
+    if(p.spareMags) lost.push(p.spareMags + ' magazines');
+    for(const m of p.meds) lost.push(ITEMS[m.id].name);
+    if(raid.bag.length) lost.push(raid.bag.length + ' looted items (₽' +
+      money(raid.bag.reduce((a,b)=>a+(ITEMS[b.id].price||0)*b.n,0)) + ')');
+    h += lost.map(l => '<div class="mrow"><span>'+esc(l)+'</span><span style="color:var(--bad)">gone</span></div>').join('')
+         || '<div class="empty">Nothing of value.</div>';
+  }
+  if(raid.kills.length){
+    const by = {};
+    for(const k of raid.kills) by[k.name] = (by[k.name]||0)+1;
+    h += '<h3 style="margin-top:14px">Eliminated</h3>';
+    for(const n in by) h += '<div class="mrow"><span>'+esc(n)+'</span><span>×'+by[n]+'</span></div>';
+  }
+  h += '<div class="mrow" style="margin-top:12px"><span>Experience</span><span style="color:var(--acc2)">+'+money(xp)+'</span></div>';
+  h += '<div class="mactions"><button class="btn pri" id="aarClose">Return to stash</button></div>';
+  modal(h);
+}
+
+/* ------------------------------------------------------------------ *
+ *  Input                                                              *
+ * ------------------------------------------------------------------ */
+function wireInput(){
+  const view = $('view');
+  view.addEventListener('click', () => { if(raid && !raid.over && !paused) requestLock(); });
+  document.addEventListener('pointerlockchange', () => {
+    locked = document.pointerLockElement === view;
+    if(!locked && raid && !raid.over && screenName === 'raid' && !paused) setPaused(true);
+  });
+  document.addEventListener('mousemove', e => {
+    if(!locked || !raid || raid.over || paused) return;
+    const p = raid.player;
+    const scale = sensitivity * (raid.cam ? raid.cam.fov/75 : 1);
+    p.yaw   -= e.movementX * scale;
+    p.pitch -= e.movementY * scale;
+    p.pitch = clamp(p.pitch, -87*DEG, 87*DEG);
+  });
+  view.addEventListener('mousedown', e => {
+    if(!raid || raid.over || paused) return;
+    if(e.button === 0){ mouse.down = true; mouse.edge = true; }
+    if(e.button === 2){ mouse.right = true; }
+  });
+  window.addEventListener('mouseup', e => {
+    if(e.button === 0) mouse.down = false;
+    if(e.button === 2) mouse.right = false;
+  });
+  view.addEventListener('contextmenu', e => e.preventDefault());
+
+  window.addEventListener('keydown', e => {
+    keys[e.code] = true;
+    if(screenName !== 'raid' || !raid || raid.over) return;
+    if(['KeyW','KeyA','KeyS','KeyD','Space','ShiftLeft','KeyC','KeyZ','Tab'].includes(e.code)) e.preventDefault();
+    if(e.code === 'KeyR') doReload();
+    if(e.code === 'KeyH') useMed();
+    if(e.code === 'KeyE' && raid.nearContainer) lootContainer(raid.nearContainer);
+    if(e.code === 'KeyF' && raid.player.gun){
+      const m = raid.player.gun.modes;
+      raid.mode = m[(m.indexOf(raid.mode)+1) % m.length];
+      raid.player.burstLeft = 0;
+    }
+    if(e.code === 'Escape') setPaused(!paused);
+  });
+  window.addEventListener('keyup', e => { keys[e.code] = false; });
+  window.addEventListener('blur', () => { for(const k in keys) keys[k] = false; mouse.down = false; mouse.right = false; });
+  window.addEventListener('resize', () => { if(screenName === 'raid') resizeView(); });
+
+  $('pause').addEventListener('click', e => {
+    if(e.target.id === 'resumeBtn') setPaused(false);
+    if(e.target.id === 'abandonBtn'){ $('pause').classList.remove('on'); endRaid('killed'); }
+    if(e.target.id === 'sensUp'){ sensitivity = Math.min(0.008, sensitivity*1.25); updateSens(); }
+    if(e.target.id === 'sensDn'){ sensitivity = Math.max(0.0006, sensitivity/1.25); updateSens(); }
+  });
+}
+function updateSens(){
+  const el = $('sensVal');
+  if(el) el.textContent = (sensitivity*1000).toFixed(2);
+  try { localStorage.setItem('exfil_sens', String(sensitivity)); } catch(e){}
+}
+
+/* ------------------------------------------------------------------ *
+ *  Test surface                                                       *
+ * ------------------------------------------------------------------ */
+window.__sim = {
+  ITEMS, AMMO, MODS, PLATFORMS, ARMOR, MAPS, QUESTS, ENEMY_TYPES, HITBOX, LIMBS,
+  get G(){ return G; }, get raid(){ return raid; },
+  resolveWeapon, canInstall, newGun, penChance, penAtRange, currentSpread, effectiveRange,
+  installedParts, providedSet, RNG, startRaid, stepSim, segLimb, segBox, dropAt,
+  generateWorld, findPath, hasLOS, traceWorld, forwardOf,
+  get worldTris(){ return worldCount; },
+
+  penRate(ammoId, cls, durFrac, metres, n){
+    n = n || 10000;
+    const a = ITEMS[ammoId], R = RNG(12345);
+    let hits = 0;
+    const p = penAtRange(a.pen, a.vel, metres || 0);
+    for(let i=0;i<n;i++) if(R.chance(penChance(p, cls, durFrac === undefined ? 1 : durFrac))) hits++;
+    return hits/n;
+  },
+  auditPlatforms(){
+    return PLATFORMS.map(p => {
+      const g = newGun(p.id), s = resolveWeapon(g);
+      return { id:p.id, ergo:s.ergo, rv:s.rv, moa:s.moa, mag:s.mag, rpm:s.rpm,
+               ads:s.adsTime, eff:effectiveRange(s), drop100:dropAt(s,100) };
+    });
+  },
+  bestBuild(platId){
+    const g = newGun(platId), p = ITEMS[platId];
+    for(const pass of [['handguard','dustcover','mount','barrel','stock','pistolgrip','gasblock'],
+                       ['optic','foregrip','muzzle','tactical','mag']]){
+      for(const slot of pass){
+        if(!p.slots.includes(slot)) continue;
+        const opts = MODS.filter(m => m.slot === slot && canInstall(g, m).ok);
+        if(!opts.length) continue;
+        let best = opts[0], bestScore = -1e9;
+        for(const m of opts){
+          const t = { plat:g.plat, mods:Object.assign({}, g.mods, {[slot]:m.id}), ammo:g.ammo };
+          const s = resolveWeapon(t);
+          const score = s.ergo*1.5 - s.rv*0.30 - s.moa*16 + s.sight*0.22 - s.weight*3.5;
+          if(score > bestScore){ bestScore = score; best = m; }
+        }
+        g.mods[slot] = best.id;
+      }
+    }
+    return { gun:g, stats:resolveWeapon(g) };
+  },
+  /* Headless raids: the simulation runs without a renderer, driven by a bot
+     that aims at whatever it can see and otherwise walks to the exit. */
+  autoRaid(mapId, n, opts){
+    opts = opts || {};
+    const res = { runs:0, survived:0, kills:0, time:0 };
+    const saved = JSON.stringify(G);
+    for(let i=0;i<n;i++){
+      G = newSave();
+      const gun = opts.build ? window.__sim.bestBuild(opts.build).gun : G.guns[0];
+      if(opts.build) G.guns = [gun];
+      if(opts.ammo) gun.ammo = opts.ammo;
+      stashAdd(G, gun.ammo, 600);
+      const ar = opts.armor !== null ? G.stash.find(e=>ITEMS[e.id].type==='armor') : null;
+      const he = opts.armor !== null ? G.stash.find(e=>ITEMS[e.id].type==='helmet') : null;
+      startRaid(mapId, { gun:gun.uid, gunObj:gun, mags:5, map:mapId, rig:null,
+                         meds:['m_salewa','m_bandage'],
+                         armor: ar?ar.uid:null, helmet: he?he.uid:null });
+      const dt = 1/30;
+      let t = 0;
+      while(!raid.over && t < 420){
+        t += dt;
+        botThink(dt);
+        stepSim(dt);
+      }
+      res.runs++;
+      if(raid && raid.result === 'extracted') res.survived++;
+      if(raid){ res.kills += raid.kills.length; res.time += raid.time; }
+      if(!raid.over) endRaid('killed');
+      raid = null;
+    }
+    G = JSON.parse(saved);
+    res.survivalRate = res.survived/res.runs;
+    res.avgKills = res.kills/res.runs;
+    res.avgTime = res.time/res.runs;
+    return res;
+  },
+};
+/* A minimal opponent for balance testing: shoot what you can see, otherwise
+   walk to the nearest exit. It never uses cover, so it is a floor, not a ceiling. */
+function botThink(dt){
+  const p = raid.player, world = raid.world;
+  if(!p.alive) return;
+  for(const k in keys) keys[k] = false;
+  mouse.down = false; mouse.right = false;
+
+  let target = null, bestD = 1e9;
+  for(const e of raid.ents){
+    if(!e.alive || e.side === 'ai' === false) continue;
+    if(e.side !== 'ai') continue;
+    const d = Math.hypot(e.x-p.x, e.z-p.z);
+    if(d > 90 || d > bestD) continue;
+    if(!hasLOS(world, p.x, p.y+EYE[p.stance], p.z, e.x, e.y+1.3, e.z)) continue;
+    bestD = d; target = e;
+  }
+  if(p.magLoaded <= 0 && p.spareMags > 0){ doReload(); return; }
+  if(target){
+    const dx = target.x-p.x, dy = (target.y+1.35)-(p.y+EYE[p.stance]), dz = target.z-p.z;
+    const L = Math.hypot(dx,dy,dz);
+    p.yaw = Math.atan2(-dx, -dz);
+    p.pitch = Math.asin(clamp(dy/L, -1, 1)) + (L*L*0.0000075);
+    mouse.right = true;
+    if(p.adsT > 0.5){ mouse.down = true; mouse.edge = true; }
+    return;
+  }
+  if(!p.meds.length === false && (hasEffect(p,'heavy') || totalHP(p) < totalMaxHP(p)*0.55) && p.medT <= 0){ useMed(); return; }
+  // walk to the exit
+  const ex = raid.world.extracts[0];
+  if(!p.botPath || p.botT === undefined || (p.botT -= dt) <= 0){
+    p.botPath = findPath(world, cellOf(p.x), cellOf(p.z), cellOf(ex.x), cellOf(ex.z), 6000);
+    p.botI = 0; p.botT = 1.2;
+  }
+  if(p.botPath && p.botI < p.botPath.length){
+    const [gx,gy] = p.botPath[p.botI];
+    const wx = (gx+0.5)*CELL, wz = (gy+0.5)*CELL;
+    const d = Math.hypot(wx-p.x, wz-p.z);
+    if(d < 0.7) p.botI++;
+    else { p.yaw = Math.atan2(-(wx-p.x), -(wz-p.z)); keys.KeyW = true; }
+  }
+}
+
+/* ------------------------------------------------------------------ *
+ *  Boot                                                               *
+ * ------------------------------------------------------------------ */
+function boot(){
+  G = load();
+  refreshLevel();
+  for(const e of G.stash){ const n = parseInt(String(e.uid).slice(1)); if(n >= uidCounter) uidCounter = n+1; }
+  try { const s = parseFloat(localStorage.getItem('exfil_sens')); if(s > 0) sensitivity = s; } catch(e){}
+  if(!initGL($('view'))){
+    document.body.innerHTML = '<div style="padding:40px;font-family:monospace;color:#c9d1cb">' +
+      'This game needs WebGL2, which this browser does not appear to support.</div>';
+    return;
+  }
+  wireMenus();
+  wireInput();
+  updateSens();
+  switchScreen('stash');
+  requestAnimationFrame(frame);
+  window.__ready = true;
+}
+if(document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot);
+else boot();
+
+</script>
+</body>
+</html>
