@@ -135,13 +135,14 @@
 
     <section class="signup section-dark" id="early-access" aria-labelledby="signup-title"><div class="shell signup-grid"><div class="signup-copy reveal"><p class="eyebrow">Be part of what's next</p><h2 id="signup-title">A healthier rhythm.<br>Starting with you.</h2><p>We're building Daywoven for people who want to understand their whole day. Join the list for early-access news and invitations.</p><a class="text-link" href="#inside">Take a look around the demo <svg><use href="#icon-arrow"/></svg></a></div>
       <div class="signup-card reveal"><h3>Get early access.</h3><p>Leave your email. We'll keep you in the loop.</p>
-        <form name="daywoven-early-access" method="POST" action="thank-you.html" data-netlify="true" netlify-honeypot="bot-field" id="signup-form">
-          <input type="hidden" name="form-name" value="daywoven-early-access">
+        <form name="daywoven-early-access" method="POST" action="/api/signup" id="signup-form">
+          
           <p class="honeypot"><label>Don't fill this out <input name="bot-field" autocomplete="off"></label></p>
           <label for="email">Email address</label><input type="email" name="email" id="email" placeholder="you@example.com" autocomplete="email" required maxlength="254">
           <label class="consent"><input type="checkbox" name="consent" value="yes" required><span>I'd like Daywoven early-access updates and invitations by email.</span></label>
           <button class="button submit-button" type="submit">Join the early-access list <svg><use href="#icon-arrow"/></svg></button>
           <p class="signup-fine">No payment details. No health information.<br><a href="privacy.html">How we use your email</a></p>
+          <p id="signup-status" role="status" aria-live="polite" style="margin-top:14px;font-size:14px;line-height:1.5"></p>
         </form>
       </div></div></section>
 
@@ -246,22 +247,43 @@ if('IntersectionObserver' in window && !window.matchMedia('(prefers-reduced-moti
  $$('.reveal').forEach(item=>observer.observe(item));
 }else{$$('.reveal').forEach(item=>item.classList.add('visible'))}
 
-// Netlify Forms collects submissions only when this static site is deployed to Netlify
-// with form detection enabled. Don't display a false success state in local previews.
-$('#signup-form').addEventListener('submit',event=>{
- if(location.protocol==='file:'){
-  event.preventDefault();
-  alert('This local preview does not collect emails. Publish the site on Netlify with Forms enabled to activate the early-access signup.');
- }
-});
-
 </script>
+
 <script>
-// GitHub Pages hosts static files and cannot capture form responses without a backend.
-document.querySelector("#signup-form")?.addEventListener("submit", function(event) {
-  event.preventDefault();
-  alert("Early-access email collection is not active yet. We're preparing signup.");
-});
+(() => {
+  const form = document.getElementById('signup-form');
+  const status = document.getElementById('signup-status');
+  if (!form || !status) return;
+  form.addEventListener('submit', async (event) => {
+    event.preventDefault();
+    if (!form.reportValidity()) return;
+    const button = form.querySelector('button[type=submit]');
+    const original = button.innerHTML;
+    button.disabled = true;
+    button.textContent = 'Saving your signup...';
+    status.textContent = '';
+    try {
+      const response = await fetch('/api/signup', {
+        method: 'POST',
+        headers: {'Content-Type':'application/json','Accept':'application/json'},
+        body: JSON.stringify({
+          email: form.elements.email.value,
+          consent: form.elements.consent.checked ? 'yes' : 'no',
+          'bot-field': form.elements['bot-field'].value
+        })
+      });
+      const result = await response.json();
+      if (!response.ok || !result.ok) throw new Error(result.message || 'Could not save your email. Please try again.');
+      status.textContent = result.message || "You're on the list! We'll keep you updated.";
+      form.reset();
+    } catch (error) {
+      status.textContent = error.message || 'Something went wrong. Please try again.';
+    } finally {
+      button.disabled = false;
+      button.innerHTML = original;
+    }
+  });
+})();
 </script>
 </body>
 </html>
